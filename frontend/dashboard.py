@@ -295,12 +295,20 @@ if selected_user:
 
         # Get response from Stella
         with st.chat_message("assistant"):
-            with st.spinner("Thinking..."):
-                response_text = chat_with_stella(selected_user, prompt)
-                st.markdown(response_text)
+            message_placeholder = st.empty()
+            full_response = ""
+            
+            # Stream the response
+            with requests.post(f"{API_URL}/chat", json={"user_id": selected_user, "message": prompt}, stream=True) as r:
+                for chunk in r.iter_content(chunk_size=None, decode_unicode=True):
+                    if chunk:
+                        full_response += chunk
+                        message_placeholder.markdown(full_response + "▌")
+            
+            message_placeholder.markdown(full_response)
         
         # Add assistant message to history
-        st.session_state.messages.append({"role": "assistant", "content": response_text})
+        st.session_state.messages.append({"role": "assistant", "content": full_response})
 
 else:
     # Empty State

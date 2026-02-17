@@ -48,9 +48,10 @@ def analyze_health_data(user_summary: dict) -> str:
     except Exception as e:
         return f"Error generating insight: {str(e)}. Ensure Ollama is running."
 
-def chat_with_stella(context: dict, user_message: str) -> str:
+def chat_with_stella(context: dict, user_message: str):
     """
     Handles interactive chat with Stella, using the user's health context.
+    Returns a generator that yields chunks of the response.
     """
     system_prompt = f"""
     You are Stella, an AI Health Assistant.
@@ -68,10 +69,17 @@ def chat_with_stella(context: dict, user_message: str) -> str:
     """
 
     try:
-        response = ollama.chat(model='mistral:latest', messages=[
-            {'role': 'system', 'content': system_prompt},
-            {'role': 'user', 'content': user_message}
-        ])
-        return response['message']['content']
+        stream = ollama.chat(
+            model='mistral:latest', 
+            messages=[
+                {'role': 'system', 'content': system_prompt},
+                {'role': 'user', 'content': user_message}
+            ],
+            stream=True
+        )
+        
+        for chunk in stream:
+            yield chunk['message']['content']
+            
     except Exception as e:
-        return f"I'm having trouble thinking right now. (Error: {str(e)})"
+        yield f"I'm having trouble thinking right now. (Error: {str(e)})"

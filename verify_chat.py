@@ -17,16 +17,23 @@ def verify_chat():
     try:
         print(f"🔹 Sending Request: {payload['message']}")
         start_time = time.time()
-        response = requests.post(URL, json=payload, timeout=60)
-        duration = time.time() - start_time
         
-        if response.status_code == 200:
-            data = response.json()
-            print(f"✅ Success ({duration:.2f}s)!")
-            print(f"🤖 Response: {data.get('response')}")
-        else:
-            print(f"❌ Failed: {response.status_code}")
-            print(response.text)
+        # Enable streaming
+        with requests.post(URL, json=payload, stream=True, timeout=60) as response:
+            if response.status_code == 200:
+                print("✅ Connection Established. Receiving stream...")
+                print("🤖 Response: ", end="", flush=True)
+                
+                # Iterate over chunks
+                for chunk in response.iter_content(chunk_size=None, decode_unicode=True):
+                    if chunk:
+                        print(chunk, end="", flush=True)
+                
+                duration = time.time() - start_time
+                print(f"\n\n⏱️ Total Time: {duration:.2f}s")
+            else:
+                print(f"❌ Failed: {response.status_code}")
+                print(response.text)
             
     except Exception as e:
         print(f"❌ Error: {e}")

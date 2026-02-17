@@ -148,9 +148,14 @@ def chat_endpoint(request: ChatRequest):
         context = {"error": "User data not found"}
 
     print(f"💬 Chatting for User {request.user_id}: {request.message}")
-    response_text = chat_with_stella(context, request.message)
     
-    return {"response": response_text}
+    # Use StreamingResponse
+    from fastapi.responses import StreamingResponse
+    
+    return StreamingResponse(
+        chat_with_stella(context, request.message), 
+        media_type="text/plain"
+    )
 
 if __name__ == "__main__":
     uvicorn.run("backend.main:app", host="127.0.0.1", port=8000, reload=True)
