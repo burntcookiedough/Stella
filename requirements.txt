@@ -5,3 +5,4 @@ streamlit
 ollama
 plotly
 python-multipart
+fpdf

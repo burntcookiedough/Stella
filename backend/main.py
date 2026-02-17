@@ -157,5 +157,32 @@ def chat_endpoint(request: ChatRequest):
         media_type="text/plain"
     )
 
+# Report Endpoint
+from fastapi import Response
+from backend.report import create_health_report
+
+@app.get("/report/{user_id}")
+def generate_report(user_id: int):
+    """
+    Generates a PDF report for the user.
+    """
+    df = get_data()
+    
+    # Check if user exists
+    if user_id not in df['id'].unique():
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    # Get stats
+    stats = get_latest_user_stats(df, user_id)
+    
+    # Generate AI Insight (fresh)
+    llm_input = generate_llm_summary(stats)
+    ai_text = analyze_health_data(llm_input)
+    
+    # Create PDF
+    pdf_bytes = create_health_report(user_id, stats, ai_text)
+    
+    return Response(content=bytes(pdf_bytes), media_type="application/pdf", headers={"Content-Disposition": f"attachment; filename=stella_report_{user_id}.pdf"})
+
 if __name__ == "__main__":
     uvicorn.run("backend.main:app", host="127.0.0.1", port=8000, reload=True)

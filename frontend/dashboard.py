@@ -274,6 +274,25 @@ if selected_user:
                     )
                     st.plotly_chart(fig2, use_container_width=True)
 
+                # --- Report Generation ---
+                st.markdown("### 📄 Export")
+                if st.button("Generate PDF Report"):
+                    with st.spinner("Generating full health report (this may take a moment)..."):
+                        try:
+                            pdf_resp = requests.get(f"{API_URL}/report/{selected_user}")
+                            if pdf_resp.status_code == 200:
+                                st.download_button(
+                                    label="Download Report",
+                                    data=pdf_resp.content,
+                                    file_name=f"stella_report_{selected_user}.pdf",
+                                    mime="application/pdf"
+                                )
+                                st.success("Report ready for download!")
+                            else:
+                                st.error("Failed to generate report.")
+                        except Exception as e:
+                            st.error(f"Connection error: {e}")
+
             else:
                 st.error("Failed to fetch analysis. Ensure Backend is running.")
 
