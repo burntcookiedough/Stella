@@ -52,6 +52,12 @@ Stella/
 -   **AI Engine**: Ollama (Mistral 7B)
 -   **Data**: Pandas, Plotly
 
+## 💬 New Feature: Interactive Chat
+You can now ask Stella questions about the data!
+- "Why is my sleep score low?"
+- "How do I compare to last week?"
+- "Give me a summary of my anomalies."
+
 ## 🔒 Privacy Note
 
 All data processing happens locally on your machine. No health data is uploaded to any external server.

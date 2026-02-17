@@ -9,7 +9,7 @@ import os
 from analytics.ingest import load_data
 from analytics.features import compute_features, get_latest_user_stats
 from analytics.anomaly import detect_anomalies, generate_llm_summary
-from llm.engine import analyze_health_data
+from llm.engine import analyze_health_data, chat_with_stella
 
 # Initialize App
 app = FastAPI(title="Stella API", version="1.0")
@@ -120,6 +120,37 @@ def analyze_user(user_id: int):
         "anomalies": stats.get("anomalies"),
         "ai_analysis": ai_text
     }
+
+class ChatRequest(BaseModel):
+    user_id: int
+    message: str
+
+@app.post("/chat")
+def chat_endpoint(request: ChatRequest):
+    """
+    Interactive chat with Stella about specific user data.
+    """
+    df = get_data()
+    
+    # Check if user exists but don't fail hard, just use empty context if not found
+    if request.user_id in df['id'].unique():
+        stats = get_latest_user_stats(df, request.user_id)
+        # Simplified context for chat
+        context = {
+            "metrics": {
+                "steps": stats.get("steps"),
+                "sleep_min": stats.get("sleep_minutes"),
+                "health_score": stats.get("health_score")
+            },
+            "anomalies": stats.get("anomalies")
+        }
+    else:
+        context = {"error": "User data not found"}
+
+    print(f"💬 Chatting for User {request.user_id}: {request.message}")
+    response_text = chat_with_stella(context, request.message)
+    
+    return {"response": response_text}
 
 if __name__ == "__main__":
     uvicorn.run("backend.main:app", host="127.0.0.1", port=8000, reload=True)

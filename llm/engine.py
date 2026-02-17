@@ -47,3 +47,31 @@ def analyze_health_data(user_summary: dict) -> str:
 
     except Exception as e:
         return f"Error generating insight: {str(e)}. Ensure Ollama is running."
+
+def chat_with_stella(context: dict, user_message: str) -> str:
+    """
+    Handles interactive chat with Stella, using the user's health context.
+    """
+    system_prompt = f"""
+    You are Stella, an AI Health Assistant.
+    Answer the user's question based on their health data context below.
+    
+    USER CONTEXT:
+    {json.dumps(context, indent=2)}
+    
+    RULES:
+    1. Be concise (under 3 sentences unless asked for detail).
+    2. Use a friendly, professional tone.
+    3. Refer to specific metrics in the context if relevant.
+    4. If the user asks about something not in the data, say you don't know but offer general advice.
+    5. NO MEDICAL DIAGNOSIS.
+    """
+
+    try:
+        response = ollama.chat(model='mistral:latest', messages=[
+            {'role': 'system', 'content': system_prompt},
+            {'role': 'user', 'content': user_message}
+        ])
+        return response['message']['content']
+    except Exception as e:
+        return f"I'm having trouble thinking right now. (Error: {str(e)})"
