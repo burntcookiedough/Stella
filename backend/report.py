@@ -69,7 +69,11 @@ def create_health_report(user_id, stats, ai_analysis):
     pdf.cell(0, 10, "AI Behavioral Insight", 0, 1)
     pdf.set_font('Arial', '', 11)
     
+    # Sanitize text: FPDF (v1.7) doesn't support UTF-8 emojis well.
+    # Replace unsupported characters with '?'
+    safe_text = ai_analysis.encode('latin-1', 'replace').decode('latin-1')
+    
     # Handle potentially long text
-    pdf.multi_cell(0, 7, ai_analysis)
+    pdf.multi_cell(0, 7, safe_text)
     
     return pdf.output(dest='S').encode('latin-1') # Return bytes
