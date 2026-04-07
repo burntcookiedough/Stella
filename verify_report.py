@@ -1,36 +1,86 @@
+from __future__ import annotations
 
-import requests
+import subprocess
 import sys
+import time
+import json
+from urllib import request
 
-URL = "http://127.0.0.1:8000/report/1503960366"
 
-def verify_report():
-    print("🚀 Verifying PDF Report Endpoint...")
-    
+BASE_URL = "http://127.0.0.1:8000"
+
+
+def _request_json(url: str, method: str = "GET", payload: dict | None = None, headers: dict[str, str] | None = None, timeout: int = 15):
+    data = json.dumps(payload).encode("utf-8") if payload is not None else None
+    request_headers = {"Accept": "application/json", **(headers or {})}
+    if payload is not None:
+        request_headers["Content-Type"] = "application/json"
+    req = request.Request(url, data=data, headers=request_headers, method=method)
+    with request.urlopen(req, timeout=timeout) as response:
+        body = response.read()
+        return response.status, dict(response.headers), json.loads(body.decode("utf-8"))
+
+
+def _request_binary(url: str, payload: dict | None = None, headers: dict[str, str] | None = None, timeout: int = 120):
+    data = json.dumps(payload).encode("utf-8") if payload is not None else None
+    request_headers = {"Accept": "*/*", **(headers or {})}
+    if payload is not None:
+        request_headers["Content-Type"] = "application/json"
+    req = request.Request(url, data=data, headers=request_headers, method="POST")
+    with request.urlopen(req, timeout=timeout) as response:
+        return response.status, dict(response.headers), response.read()
+
+
+def _login() -> str:
+    _, _, response = _request_json(
+        f"{BASE_URL}/v1/auth/login",
+        method="POST",
+        payload={"username": "stella", "password": "stella"},
+    )
+    return response["access_token"]
+
+
+def _ensure_server() -> subprocess.Popen[str] | None:
     try:
-        # Note: This might trigger LLM, so set timeout high
-        response = requests.get(URL, timeout=120) 
-        
-        if response.status_code == 200:
-            content_type = response.headers.get("content-type")
-            print(f"✅ Status 200 OK")
-            print(f"📄 Content-Type: {content_type}")
-            
-            if "application/pdf" in content_type:
-                # Check PDF signature
-                if response.content.startswith(b"%PDF"):
-                    print("✅ Valid PDF Signature detected.")
-                    print(f"📦 Size: {len(response.content)} bytes")
-                else:
-                    print("❌ Invalid File Signature (Not a PDF)")
-            else:
-                print(f"❌ Unexpected Content-Type: {content_type}")
-        else:
-            print(f"❌ Failed: {response.status_code}")
-            print(response.text)
+        _request_json(f"{BASE_URL}/healthz", timeout=2)
+        return None
+    except Exception:
+        process = subprocess.Popen(
+            [sys.executable, "-m", "uvicorn", "backend.main:app", "--host", "127.0.0.1", "--port", "8000"],
+            text=True,
+        )
+        time.sleep(5)
+        return process
 
-    except Exception as e:
-        print(f"❌ Error: {e}")
+
+def verify_report() -> None:
+    print("Verifying Stella PDF report endpoint...")
+    server_process = _ensure_server()
+    try:
+        token = _login()
+        response_status, response_headers, response_content = _request_binary(
+            f"{BASE_URL}/v1/reports/pdf",
+            payload={"source_user_id": None},
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=120,
+        )
+
+        print("status:", response_status)
+        print("llm status:", response_headers.get("X-Stella-LLM-Status"))
+        print("content-type:", response_headers.get("Content-Type"))
+
+        if response_status != 200:
+            raise SystemExit(1)
+        if not response_content.startswith(b"%PDF"):
+            raise SystemExit("Report endpoint did not return a PDF.")
+
+        print(f"PDF size: {len(response_content)} bytes")
+        print("Report endpoint smoke test passed.")
+    finally:
+        if server_process is not None:
+            server_process.terminate()
+            server_process.wait()
+
 
 if __name__ == "__main__":
     verify_report()

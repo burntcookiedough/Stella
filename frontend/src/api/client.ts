@@ -39,6 +39,13 @@ export type CorrelationsResponse = {
   }>;
 };
 
+export type ReportDownload = {
+  blob: Blob;
+  fileName: string;
+  llmStatus: "ok" | "fallback";
+  llmError: string | null;
+};
+
 export function getToken(): string | null {
   return window.localStorage.getItem(TOKEN_KEY);
 }
@@ -51,7 +58,7 @@ export function clearToken(): void {
   window.localStorage.removeItem(TOKEN_KEY);
 }
 
-async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
+function buildRequestHeaders(init?: RequestInit): Headers {
   const headers = new Headers(init?.headers);
   headers.set("Accept", "application/json");
   if (!(init?.body instanceof FormData)) {
@@ -62,11 +69,18 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   if (token) {
     headers.set("Authorization", `Bearer ${token}`);
   }
+  return headers;
+}
 
-  const response = await fetch(`${API_BASE_URL}${path}`, {
+async function request(path: string, init?: RequestInit): Promise<Response> {
+  return fetch(`${API_BASE_URL}${path}`, {
     ...init,
-    headers,
+    headers: buildRequestHeaders(init),
   });
+}
+
+async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await request(path, init);
 
   if (!response.ok) {
     const message = await response.text();
@@ -107,11 +121,24 @@ export async function uploadImport(files: File[], source?: string): Promise<void
   await apiFetch("/v1/imports", { method: "POST", body });
 }
 
-export async function downloadReport(sourceUserId?: string): Promise<Blob> {
-  return apiFetch<Blob>("/v1/reports/pdf", {
+export async function downloadReport(sourceUserId?: string): Promise<ReportDownload> {
+  const response = await request("/v1/reports/pdf", {
     method: "POST",
     body: JSON.stringify({ source_user_id: sourceUserId ?? null }),
   });
+  if (!response.ok) {
+    const message = await response.text();
+    throw new Error(message || `Request failed: ${response.status}`);
+  }
+
+  const contentDisposition = response.headers.get("content-disposition") ?? "";
+  const fileName = contentDisposition.match(/filename="?([^"]+)"?/)?.[1] ?? "stella-report.pdf";
+  return {
+    blob: await response.blob(),
+    fileName,
+    llmStatus: response.headers.get("x-stella-llm-status") === "fallback" ? "fallback" : "ok",
+    llmError: response.headers.get("x-stella-llm-error"),
+  };
 }
 
 export function buildChatSocket(sourceUserId?: string): WebSocket {

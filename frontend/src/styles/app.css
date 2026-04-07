@@ -114,12 +114,18 @@ button {
 .login-form button,
 .import-controls button,
 .chat-composer button,
-.panel button {
+.panel button,
+.inline-button {
   border: 1px solid var(--line-strong);
   background: transparent;
   color: var(--text);
   border-radius: 999px;
   padding: 12px 18px;
+}
+
+.inline-button {
+  width: fit-content;
+  padding: 10px 14px;
 }
 
 .workspace {
@@ -205,6 +211,42 @@ button {
 .list-block {
   display: grid;
   gap: 10px;
+}
+
+.status-row {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 18px;
+}
+
+.status-pill {
+  width: fit-content;
+  margin: 0;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+.status-pill.ready {
+  border-color: rgba(141, 240, 198, 0.24);
+  color: var(--accent);
+}
+
+.status-pill.streaming {
+  border-color: rgba(92, 167, 255, 0.28);
+  color: var(--blue);
+}
+
+.status-pill.error,
+.status-pill.interrupted,
+.status-pill.disconnected {
+  border-color: rgba(255, 124, 124, 0.22);
+  color: var(--danger);
 }
 
 .list-row {
@@ -329,6 +371,10 @@ button {
 
 .status.error {
   color: var(--danger);
+}
+
+.status.warning {
+  color: #f2d28c;
 }
 
 @keyframes pulse {

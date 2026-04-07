@@ -33,3 +33,27 @@ def test_gateway_refresh_reloads_configuration(tmp_path: Path) -> None:
     gateway.refresh()
     assert gateway.config.provider == "lmstudio"
     assert gateway.config.model == "second"
+
+
+def test_stub_provider_health_check_is_ready(tmp_path: Path) -> None:
+    config_path = tmp_path / "llm_config.yaml"
+    config_path.write_text(
+        "provider: stub\nmodel: test-stub\nbase_url: http://localhost:9\nstub_response: hello from stub\n",
+        encoding="utf-8",
+    )
+    gateway = LLMGateway(config_path)
+    health = gateway.health_check()
+    assert health.reachable is True
+    assert health.provider == "stub"
+    assert health.model == "test-stub"
+
+
+def test_stub_provider_stream_returns_deterministic_chunks(tmp_path: Path) -> None:
+    config_path = tmp_path / "llm_config.yaml"
+    config_path.write_text(
+        "provider: stub\nmodel: test-stub\nbase_url: http://localhost:9\nstub_response: hello from stub\n",
+        encoding="utf-8",
+    )
+    gateway = LLMGateway(config_path)
+    chunks = list(gateway.stream_chat([{"role": "user", "content": "hi"}]))
+    assert "".join(chunks) == "hello from stub"

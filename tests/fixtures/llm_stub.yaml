@@ -1,0 +1,4 @@
+provider: stub
+model: e2e-stub
+base_url: http://127.0.0.1:9
+stub_response: Stella stub response for browser validation.

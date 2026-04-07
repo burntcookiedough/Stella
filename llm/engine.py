@@ -4,9 +4,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable
 import json
+import logging
 import os
 
 import httpx
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(slots=True)
@@ -18,6 +21,23 @@ class LLMConfig:
     temperature: float = 0.2
     max_tokens: int = 512
     timeout_sec: int = 60
+    stub_response: str = "Stella stub response."
+
+
+@dataclass(slots=True)
+class LLMHealth:
+    provider: str
+    model: str
+    reachable: bool
+    error: str | None = None
+
+
+class LLMGatewayError(RuntimeError):
+    def __init__(self, message: str, *, operation: str, provider: str, model: str) -> None:
+        super().__init__(message)
+        self.operation = operation
+        self.provider = provider
+        self.model = model
 
 
 class LLMGateway:
@@ -28,20 +48,33 @@ class LLMGateway:
     def refresh(self) -> None:
         self.config = load_llm_config(self.config_path)
 
+    def health_check(self) -> LLMHealth:
+        return _health_check(self.config)
+
     def chat(self, messages: list[dict[str, str]]) -> str:
         provider = self.config.provider.lower()
-        if provider == "ollama":
-            return _ollama_chat(self.config, messages)
-        if provider in {"lmstudio", "openai_compat", "llamacpp"}:
-            return _openai_compatible_chat(self.config, messages)
+        try:
+            if provider == "ollama":
+                return _ollama_chat(self.config, messages)
+            if provider in {"lmstudio", "openai_compat", "llamacpp"}:
+                return _openai_compatible_chat(self.config, messages)
+            if provider == "stub":
+                return _stub_chat(self.config, messages)
+        except (httpx.HTTPError, json.JSONDecodeError) as exc:
+            _raise_gateway_error(self.config, "chat", exc)
         raise ValueError(f"Unsupported LLM provider: {self.config.provider}")
 
     def stream_chat(self, messages: list[dict[str, str]]) -> Iterable[str]:
         provider = self.config.provider.lower()
-        if provider == "ollama":
-            return _ollama_stream(self.config, messages)
-        if provider in {"lmstudio", "openai_compat", "llamacpp"}:
-            return _openai_compatible_stream(self.config, messages)
+        try:
+            if provider == "ollama":
+                return _ollama_stream(self.config, messages)
+            if provider in {"lmstudio", "openai_compat", "llamacpp"}:
+                return _openai_compatible_stream(self.config, messages)
+            if provider == "stub":
+                return _stub_stream(self.config, messages)
+        except (httpx.HTTPError, json.JSONDecodeError) as exc:
+            _raise_gateway_error(self.config, "chat", exc)
         raise ValueError(f"Unsupported LLM provider: {self.config.provider}")
 
     def analyze_health_data(self, summary: dict[str, Any]) -> str:
@@ -79,6 +112,7 @@ def load_llm_config(config_path: str | Path) -> LLMConfig:
         temperature=float(values.get("temperature", 0.2)),
         max_tokens=int(values.get("max_tokens", 512)),
         timeout_sec=int(values.get("timeout_sec", 60)),
+        stub_response=str(values.get("stub_response", "Stella stub response.")),
     )
 
 
@@ -117,6 +151,110 @@ def _headers(config: LLMConfig) -> dict[str, str]:
         if api_key:
             headers["Authorization"] = f"Bearer {api_key}"
     return headers
+
+
+def _health_check(config: LLMConfig) -> LLMHealth:
+    provider = config.provider.lower()
+    if provider == "stub":
+        return LLMHealth(provider=config.provider, model=config.model, reachable=True)
+
+    try:
+        if provider == "ollama":
+            response = httpx.get(
+                f"{config.base_url}/api/tags",
+                headers=_headers(config),
+                timeout=config.timeout_sec,
+            )
+            response.raise_for_status()
+            models = response.json().get("models", [])
+            if any(_model_matches(config.model, item) for item in models):
+                return LLMHealth(provider=config.provider, model=config.model, reachable=True)
+            return LLMHealth(
+                provider=config.provider,
+                model=config.model,
+                reachable=False,
+                error=f"Configured model '{config.model}' is not available in Ollama.",
+            )
+
+        if provider in {"lmstudio", "openai_compat", "llamacpp"}:
+            response = httpx.get(
+                f"{config.base_url}/v1/models",
+                headers=_headers(config),
+                timeout=config.timeout_sec,
+            )
+            response.raise_for_status()
+            models = response.json().get("data", [])
+            if not models or any(_openai_model_matches(config.model, item) for item in models):
+                return LLMHealth(provider=config.provider, model=config.model, reachable=True)
+            return LLMHealth(
+                provider=config.provider,
+                model=config.model,
+                reachable=False,
+                error=f"Configured model '{config.model}' is not exposed by the provider.",
+            )
+    except (httpx.HTTPError, json.JSONDecodeError) as exc:
+        return LLMHealth(
+            provider=config.provider,
+            model=config.model,
+            reachable=False,
+            error=_format_health_error(exc),
+        )
+
+    return LLMHealth(
+        provider=config.provider,
+        model=config.model,
+        reachable=False,
+        error=f"Unsupported LLM provider: {config.provider}",
+    )
+
+
+def _model_matches(model_name: str, payload: dict[str, Any]) -> bool:
+    candidates = [str(payload.get("name", "")), str(payload.get("model", ""))]
+    normalized = {candidate.strip() for candidate in candidates if candidate}
+    return any(candidate == model_name or candidate.startswith(f"{model_name}:") for candidate in normalized)
+
+
+def _openai_model_matches(model_name: str, payload: dict[str, Any]) -> bool:
+    candidate = str(payload.get("id", "")).strip()
+    return bool(candidate) and (candidate == model_name or candidate.startswith(f"{model_name}:"))
+
+
+def _format_health_error(exc: Exception) -> str:
+    if isinstance(exc, httpx.TimeoutException):
+        return "Timed out while contacting the configured LLM provider."
+    return str(exc)
+
+
+def _raise_gateway_error(config: LLMConfig, operation: str, exc: Exception) -> None:
+    endpoint = _provider_endpoint(config)
+    logger.warning(
+        "LLM %s failed for provider=%s model=%s timeout_sec=%s endpoint=%s error=%s",
+        operation,
+        config.provider,
+        config.model,
+        config.timeout_sec,
+        endpoint,
+        exc,
+    )
+    if isinstance(exc, httpx.TimeoutException):
+        message = f"{config.provider} timed out while handling {operation}."
+    else:
+        message = f"{config.provider} is unavailable for {operation}."
+    raise LLMGatewayError(
+        message,
+        operation=operation,
+        provider=config.provider,
+        model=config.model,
+    ) from exc
+
+
+def _provider_endpoint(config: LLMConfig) -> str:
+    provider = config.provider.lower()
+    if provider == "ollama":
+        return f"{config.base_url}/api/chat"
+    if provider in {"lmstudio", "openai_compat", "llamacpp"}:
+        return f"{config.base_url}/v1/chat/completions"
+    return config.base_url
 
 
 def _ollama_chat(config: LLMConfig, messages: list[dict[str, str]]) -> str:
@@ -195,3 +333,14 @@ def _openai_compatible_stream(config: LLMConfig, messages: list[dict[str, str]])
             delta = payload.get("choices", [{}])[0].get("delta", {}).get("content", "")
             if delta:
                 yield delta
+
+
+def _stub_chat(config: LLMConfig, _messages: list[dict[str, str]]) -> str:
+    return config.stub_response.strip()
+
+
+def _stub_stream(config: LLMConfig, _messages: list[dict[str, str]]) -> Iterable[str]:
+    words = config.stub_response.strip().split()
+    for index, word in enumerate(words):
+        suffix = "" if index == len(words) - 1 else " "
+        yield f"{word}{suffix}"
