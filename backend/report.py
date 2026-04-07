@@ -1,79 +1,90 @@
+from __future__ import annotations
+
+from datetime import UTC, datetime
+from typing import Any
 
 from fpdf import FPDF
-import datetime
+
 
 class StellaReport(FPDF):
-    def header(self):
-        # Title
-        self.set_font('Arial', 'B', 15)
-        self.cell(0, 10, 'Stella Health Analytics - User Report', 0, 1, 'C')
-        self.ln(5)
+    def header(self) -> None:
+        self.set_font("Helvetica", "B", 18)
+        self.cell(0, 10, "Stella v2 Health Report", ln=1)
+        self.set_font("Helvetica", "", 10)
+        self.set_text_color(116, 122, 126)
+        self.cell(0, 6, "Local-first health intelligence snapshot", ln=1)
+        self.ln(4)
+        self.set_text_color(0, 0, 0)
 
-    def footer(self):
-        # Position at 1.5 cm from bottom
-        self.set_y(-15)
-        self.set_font('Arial', 'I', 8)
-        self.cell(0, 10, 'Page ' + str(self.page_no()) + '/{nb}', 0, 0, 'C')
+    def footer(self) -> None:
+        self.set_y(-12)
+        self.set_font("Helvetica", "I", 8)
+        self.set_text_color(120, 120, 120)
+        self.cell(0, 8, f"Generated {datetime.now(UTC).date()} | Page {self.page_no()}", align="C")
 
-def create_health_report(user_id, stats, ai_analysis):
+
+def create_health_report(overview: dict[str, Any], correlations: dict[str, Any], ai_analysis: str) -> bytes:
     pdf = StellaReport()
-    pdf.alias_nb_pages()
+    pdf.set_auto_page_break(auto=True, margin=14)
     pdf.add_page()
-    
-    # --- Meta Info ---
-    pdf.set_font('Arial', '', 12)
-    pdf.cell(0, 10, f"User ID: {user_id}", 0, 1)
-    pdf.cell(0, 10, f"Date: {datetime.date.today()}", 0, 1)
-    pdf.ln(5)
-    
-    # --- Metrics Section ---
-    pdf.set_font('Arial', 'B', 14)
-    pdf.cell(0, 10, "Daily Metrics", 0, 1)
-    pdf.set_font('Arial', '', 12)
-    
-    metrics = {
-        "Health Score": stats.get('health_score', 'N/A'),
-        "Steps": stats.get('steps', 'N/A'),
-        "Sleep Minutes": stats.get('sleep_minutes', 'N/A'),
-        "Trend": stats.get('steps_trend', 'N/A')
-    }
-    
-    for key, val in metrics.items():
-        pdf.cell(50, 10, f"{key}:", 0, 0)
-        pdf.cell(0, 10, str(val), 0, 1)
-    
-    pdf.ln(5)
-    
-    # --- Anomalies Section ---
-    pdf.set_font('Arial', 'B', 14)
-    pdf.cell(0, 10, "Anomalies Detected", 0, 1)
-    pdf.set_font('Arial', '', 12)
-    
-    anomalies = stats.get('anomalies', {})
-    if any(anomalies.values()):
-        pdf.set_text_color(255, 0, 0) # Red
-        if anomalies.get('low_sleep'):
-            pdf.cell(0, 10, "- Low Sleep Detected", 0, 1)
-        if anomalies.get('low_steps'):
-            pdf.cell(0, 10, "- Low Activity Detected", 0, 1)
-        if anomalies.get('high_activity'):
-            pdf.cell(0, 10, "- Unusual High Activity", 0, 1)
-        pdf.set_text_color(0, 0, 0) # Reset to black
+
+    latest = overview.get("latest") or {}
+    pdf.set_font("Helvetica", "B", 13)
+    pdf.cell(0, 8, f"User: {overview.get('selected_user', 'n/a')}", ln=1)
+    pdf.set_font("Helvetica", "", 11)
+    pdf.cell(0, 7, f"Latest day: {latest.get('day', 'n/a')}", ln=1)
+    pdf.ln(4)
+
+    _section_title(pdf, "Latest Metrics")
+    metrics = [
+        ("Health score", latest.get("health_score")),
+        ("Steps", latest.get("steps")),
+        ("Sleep minutes", latest.get("sleep_minutes")),
+        ("Resting HR", latest.get("resting_hr")),
+        ("HRV", latest.get("hrv")),
+    ]
+    for label, value in metrics:
+        pdf.set_font("Helvetica", "B", 11)
+        pdf.cell(42, 7, f"{label}:", border=0)
+        pdf.set_font("Helvetica", "", 11)
+        pdf.cell(0, 7, str(value if value is not None else "n/a"), ln=1)
+
+    _section_title(pdf, "Recent Anomalies")
+    anomalies = overview.get("anomalies", [])
+    if anomalies:
+        for anomaly in anomalies[-5:]:
+            labels = []
+            if anomaly.get("low_sleep"):
+                labels.append("low sleep")
+            if anomaly.get("low_activity"):
+                labels.append("low activity")
+            if anomaly.get("high_resting_hr"):
+                labels.append("high resting HR")
+            pdf.multi_cell(0, 7, f"{anomaly['day']}: {', '.join(labels)}")
     else:
-        pdf.cell(0, 10, "No anomalies detected.", 0, 1)
-        
-    pdf.ln(5)
-    
-    # --- AI Analysis Section ---
-    pdf.set_font('Arial', 'B', 14)
-    pdf.cell(0, 10, "AI Behavioral Insight", 0, 1)
-    pdf.set_font('Arial', '', 11)
-    
-    # Sanitize text: FPDF (v1.7) doesn't support UTF-8 emojis well.
-    # Replace unsupported characters with '?'
-    safe_text = ai_analysis.encode('latin-1', 'replace').decode('latin-1')
-    
-    # Handle potentially long text
+        pdf.cell(0, 7, "No recent anomaly flags.", ln=1)
+
+    _section_title(pdf, "Strongest Correlations")
+    pair_rows = correlations.get("pairs", [])[:5]
+    if pair_rows:
+        for pair in pair_rows:
+            descriptor = f"{pair['metric_a']} vs {pair['metric_b']} (lag {pair['lag_days']}d)"
+            pdf.set_font("Helvetica", "B", 11)
+            pdf.cell(0, 7, descriptor, ln=1)
+            pdf.set_font("Helvetica", "", 11)
+            pdf.cell(0, 7, f"corr={pair['correlation']} across {pair['sample_size']} samples", ln=1)
+    else:
+        pdf.cell(0, 7, "Not enough data for correlation analysis yet.", ln=1)
+
+    _section_title(pdf, "AI Summary")
+    pdf.set_font("Helvetica", "", 11)
+    safe_text = ai_analysis.encode("latin-1", "replace").decode("latin-1")
     pdf.multi_cell(0, 7, safe_text)
-    
-    return pdf.output(dest='S').encode('latin-1') # Return bytes
+
+    return bytes(pdf.output(dest="S"))
+
+
+def _section_title(pdf: StellaReport, title: str) -> None:
+    pdf.ln(6)
+    pdf.set_font("Helvetica", "B", 14)
+    pdf.cell(0, 8, title, ln=1)

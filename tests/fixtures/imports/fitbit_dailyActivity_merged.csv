@@ -1,0 +1,4 @@
+Id,ActivityDate,TotalSteps,Calories,VeryActiveMinutes,FairlyActiveMinutes,LightlyActiveMinutes,SedentaryMinutes
+fitbit-user,4/1/2026,10000,2100,24,18,180,720
+fitbit-user,4/2/2026,9200,2050,18,22,172,740
+fitbit-user,4/3/2026,8700,1980,12,20,165,760

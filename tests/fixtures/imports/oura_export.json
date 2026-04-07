@@ -1,0 +1,19 @@
+{
+  "user_id": "oura-user",
+  "sleep": [
+    {
+      "day": "2026-04-02",
+      "total_sleep_duration": 25800,
+      "hr_average": 56,
+      "hrv_average": 48
+    }
+  ],
+  "activity": [
+    {
+      "day": "2026-04-02",
+      "steps": 9834,
+      "active_calories": 421,
+      "active_duration": 4500
+    }
+  ]
+}

@@ -1,188 +1,295 @@
+from __future__ import annotations
 
-from fastapi import FastAPI, HTTPException
+from contextlib import asynccontextmanager
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import Annotated, Any
+import shutil
+import uuid
+
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, Response, UploadFile, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
 import uvicorn
-import os
 
-# Import our modules
-from analytics.ingest import load_data
-from analytics.features import compute_features, get_latest_user_stats
-from analytics.anomaly import detect_anomalies, generate_llm_summary
-from llm.engine import analyze_health_data, chat_with_stella
+from analytics.anomaly import generate_llm_summary
+from analytics.features import get_latest_user_stats
+from analytics.pipeline import HealthAnalyticsService
+from analytics.store import HealthStore
+from backend.auth import decode_token, issue_token, secure_compare
+from backend.config import Settings, get_settings
+from backend.report import create_health_report
+from llm.engine import LLMGateway
 
-# Initialize App
-app = FastAPI(title="Stella API", version="1.0")
+try:
+    from apscheduler.schedulers.background import BackgroundScheduler
+except ImportError:  # pragma: no cover
+    BackgroundScheduler = None
 
-# Allow CORS (for Streamlit frontend running on different port)
+settings = get_settings()
+security = HTTPBearer(auto_error=False)
+
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+
+class LoginResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    expires_in_minutes: int
+
+
+class ReportRequest(BaseModel):
+    source_user_id: str | None = None
+
+
+def _client_is_loopback(host: str | None) -> bool:
+    return host in {"127.0.0.1", "::1", "localhost"}
+
+
+def _get_settings(request: Request) -> Settings:
+    return request.app.state.settings
+
+
+def _get_service(request: Request) -> HealthAnalyticsService:
+    return request.app.state.analytics_service
+
+
+def _get_gateway(request: Request) -> LLMGateway:
+    return request.app.state.llm_gateway
+
+
+def require_auth(
+    request: Request,
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(security)],
+) -> dict[str, Any]:
+    runtime_settings = _get_settings(request)
+    client_host = request.client.host if request.client else None
+    if runtime_settings.dev_bypass and _client_is_loopback(client_host):
+        return {"sub": runtime_settings.username, "dev_bypass": True}
+    if credentials is None:
+        raise HTTPException(status_code=401, detail="Missing bearer token.")
+    try:
+        return decode_token(credentials.credentials, runtime_settings.jwt_secret)
+    except ValueError as exc:
+        raise HTTPException(status_code=401, detail=str(exc)) from exc
+
+
+def _initialize_state(application: FastAPI) -> None:
+    application.state.settings = settings
+    application.state.store = HealthStore(settings.duckdb_path)
+    application.state.analytics_service = HealthAnalyticsService(application.state.store)
+    application.state.llm_gateway = LLMGateway(settings.llm_config_path)
+    application.state.analytics_service.bootstrap_fitbit_sample(settings.data_dir / "raw")
+
+    if settings.scheduler_enabled and BackgroundScheduler is not None:
+        scheduler = BackgroundScheduler(timezone="UTC")
+        scheduler.add_job(
+            application.state.analytics_service.refresh_materializations,
+            trigger="cron",
+            hour=2,
+            minute=0,
+            id="refresh-materializations",
+            replace_existing=True,
+        )
+        scheduler.start()
+        application.state.scheduler = scheduler
+    else:
+        application.state.scheduler = None
+
+
+def _shutdown_state(application: FastAPI) -> None:
+    scheduler = getattr(application.state, "scheduler", None)
+    if scheduler is not None:
+        scheduler.shutdown(wait=False)
+
+
+@asynccontextmanager
+async def lifespan(application: FastAPI):
+    _initialize_state(application)
+    try:
+        yield
+    finally:
+        _shutdown_state(application)
+
+
+app = FastAPI(title="Stella API", version="2.0", lifespan=lifespan)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        settings.frontend_origin,
+        "http://localhost:5173",
+        "http://localhost:8501",  # Support legacy streamlit if needed
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Global Data Cache (naive approach for demo)
-# In production, this would be a database connection
-DATA_CACHE = None
 
-@app.on_event("startup")
-async def startup_event():
-    print("🚀 Application Startup: Loading Data...")
-    try:
-        get_data()
-        print("✅ Startup Complete: Data Loaded")
-    except Exception as e:
-        print(f"❌ Startup Failed: Data Load Error: {e}")
+async def startup_event() -> None:
+    _initialize_state(app)
 
-def get_data():
-    """Lazy loads data once on startup or first request"""
-    global DATA_CACHE
-    if DATA_CACHE is None:
-        print("📥 Loading Data Cache...")
-        try:
-            # Point to local data/raw directory relative to root execution context
-            # Assuming backend is run from project root (python -m backend.main)
-            data_dir = os.path.join(os.getcwd(), "data", "raw")
-            print(f"📂 Reading from: {data_dir}")
-            
-            print("   - Loading CSVs...")
-            df = load_data(data_dir)
-            print(f"   - CSV Loaded. Rows: {len(df)}")
-            
-            print("   - Computing Features...")
-            df = compute_features(df)
-            
-            print("   - Detecting Anomalies...")
-            df = detect_anomalies(df)
-            
-            DATA_CACHE = df
-            print("✅ Data Cache Ready.")
-        except Exception as e:
-            print(f"❌ Data Loading Failed: {e}")
-            raise e
-    return DATA_CACHE
 
-@app.get("/")
-def read_root():
-    return {"status": "ok", "service": "Stella Health Analytics"}
+async def shutdown_event() -> None:
+    _shutdown_state(app)
 
-@app.get("/users")
-def get_users():
-    """List all available user IDs for testing"""
-    df = get_data()
-    users = df['id'].unique().tolist()
-    return {"count": len(users), "users": [int(u) for u in users]}
 
-class AnalysisResponse(BaseModel):
-    user_id: int
-    date: str
-    metrics: dict
-    anomalies: dict
-    ai_analysis: str
+@app.get("/healthz")
+def healthz() -> dict[str, str]:
+    return {"status": "ok"}
 
-@app.post("/analyze/{user_id}", response_model=AnalysisResponse)
-def analyze_user(user_id: int):
-    """
-    Triggers full analysis pipeline for a specific user:
-    1. Retrieve latest stats
-    2. Check for anomalies
-    3. Generate LLM insight
-    """
-    df = get_data()
-    
-    # Check if user exists
-    if user_id not in df['id'].unique():
-        raise HTTPException(status_code=404, detail="User not found")
-    
-    # Get structured stats
-    stats = get_latest_user_stats(df, user_id)
-    if not stats:
-        raise HTTPException(status_code=404, detail="No data available for user")
 
-    # Generate LLM Prompt JSON
-    llm_input = generate_llm_summary(stats)
+@app.get("/readyz")
+def readyz(request: Request) -> dict[str, Any]:
+    store: HealthStore = request.app.state.store
+    return {"status": "ready", "has_data": store.has_events()}
 
-    # Call LLM
-    print(f"🤖 Generating AI Insight for User {user_id}...")
-    ai_text = analyze_health_data(llm_input)
-    
+
+@app.post("/v1/auth/login", response_model=LoginResponse)
+def login(request_body: LoginRequest, request: Request) -> LoginResponse:
+    runtime_settings = _get_settings(request)
+    if not secure_compare(request_body.username, runtime_settings.username) or not secure_compare(
+        request_body.password, runtime_settings.password
+    ):
+        raise HTTPException(status_code=401, detail="Invalid credentials.")
+    token = issue_token(runtime_settings.username, runtime_settings.jwt_secret, runtime_settings.token_ttl_minutes)
+    return LoginResponse(access_token=token, expires_in_minutes=runtime_settings.token_ttl_minutes)
+
+
+@app.post("/v1/imports")
+async def import_files(
+    request: Request,
+    _claims: Annotated[dict[str, Any], Depends(require_auth)],
+    files: Annotated[list[UploadFile], File(...)],
+    source: Annotated[str | None, Form()] = None,
+) -> dict[str, Any]:
+    if not files:
+        raise HTTPException(status_code=400, detail="At least one file is required.")
+
+    import_dir = _get_settings(request).uploads_dir / str(uuid.uuid4())
+    import_dir.mkdir(parents=True, exist_ok=True)
+    saved_paths: list[Path] = []
+    for upload in files:
+        filename = upload.filename or "upload.bin"
+        destination = import_dir / filename
+        with destination.open("wb") as handle:
+            shutil.copyfileobj(upload.file, handle)
+        saved_paths.append(destination)
+
+    service = _get_service(request)
+    result = service.ingest_paths(saved_paths, source=source)
     return {
-        "user_id": user_id,
-        "date": stats.get("date"),
-        "metrics": {
-            "steps": stats.get("steps"),
-            "sleep_minutes": stats.get("sleep_minutes"),
-            "health_score": stats.get("health_score"),
-            "steps_trend": stats.get("steps_trend")
-        },
-        "anomalies": stats.get("anomalies"),
-        "ai_analysis": ai_text
+        "status": "imported",
+        "imported_at": datetime.now(UTC).isoformat(),
+        **result,
     }
 
-class ChatRequest(BaseModel):
-    user_id: int
-    message: str
 
-@app.post("/chat")
-def chat_endpoint(request: ChatRequest):
-    """
-    Interactive chat with Stella about specific user data.
-    """
-    df = get_data()
-    
-    # Check if user exists but don't fail hard, just use empty context if not found
-    if request.user_id in df['id'].unique():
-        stats = get_latest_user_stats(df, request.user_id)
-        # Simplified context for chat
-        context = {
-            "metrics": {
-                "steps": stats.get("steps"),
-                "sleep_min": stats.get("sleep_minutes"),
-                "health_score": stats.get("health_score")
-            },
-            "anomalies": stats.get("anomalies")
-        }
-    else:
-        context = {"error": "User data not found"}
+@app.get("/v1/overview")
+def overview(
+    request: Request,
+    _claims: Annotated[dict[str, Any], Depends(require_auth)],
+    source_user_id: str | None = None,
+) -> dict[str, Any]:
+    return _get_service(request).get_overview(source_user_id=source_user_id)
 
-    print(f"💬 Chatting for User {request.user_id}: {request.message}")
-    
-    # Use StreamingResponse
-    from fastapi.responses import StreamingResponse
-    
-    return StreamingResponse(
-        chat_with_stella(context, request.message), 
-        media_type="text/plain"
+
+@app.get("/v1/analytics/correlations")
+def correlations(
+    request: Request,
+    _claims: Annotated[dict[str, Any], Depends(require_auth)],
+    source_user_id: str | None = None,
+    lag_days: int | None = None,
+) -> dict[str, Any]:
+    return _get_service(request).get_correlations(source_user_id=source_user_id, lag_days=lag_days)
+
+
+@app.post("/v1/reports/pdf")
+def generate_report(
+    request_body: ReportRequest,
+    request: Request,
+    _claims: Annotated[dict[str, Any], Depends(require_auth)],
+) -> Response:
+    service = _get_service(request)
+    overview_payload = service.get_overview(source_user_id=request_body.source_user_id)
+    correlations_payload = service.get_correlations(source_user_id=request_body.source_user_id)
+    if overview_payload["latest"] is None:
+        raise HTTPException(status_code=404, detail="No overview data available.")
+
+    llm_summary = {
+        **generate_llm_summary(
+            get_latest_user_stats(
+                request.app.state.store.fetch_overview(overview_payload["selected_user"]),
+                overview_payload["selected_user"],
+            )
+        ),
+        "correlations": correlations_payload["pairs"][:3],
+    }
+    ai_text = _get_gateway(request).analyze_health_data(llm_summary)
+    pdf_bytes = create_health_report(overview_payload, correlations_payload, ai_text)
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename=stella-report-{overview_payload['selected_user']}.pdf"},
     )
 
-# Report Endpoint
-from fastapi import Response
-from backend.report import create_health_report
 
-@app.get("/report/{user_id}")
-def generate_report(user_id: int):
-    """
-    Generates a PDF report for the user.
-    """
-    df = get_data()
-    
-    # Check if user exists
-    if user_id not in df['id'].unique():
-        raise HTTPException(status_code=404, detail="User not found")
-    
-    # Get stats
-    stats = get_latest_user_stats(df, user_id)
-    
-    # Generate AI Insight (fresh)
-    llm_input = generate_llm_summary(stats)
-    ai_text = analyze_health_data(llm_input)
-    
-    # Create PDF
-    pdf_bytes = create_health_report(user_id, stats, ai_text)
-    
-    return Response(content=bytes(pdf_bytes), media_type="application/pdf", headers={"Content-Disposition": f"attachment; filename=stella_report_{user_id}.pdf"})
+@app.websocket("/v1/chat/ws")
+async def chat_socket(websocket: WebSocket) -> None:
+    await websocket.accept()
+    runtime_settings: Settings = websocket.app.state.settings
+    token = websocket.query_params.get("token")
+    client_host = websocket.client.host if websocket.client else None
+
+    try:
+        if not (runtime_settings.dev_bypass and _client_is_loopback(client_host)):
+            if not token:
+                await websocket.send_json({"type": "error", "message": "Missing token."})
+                await websocket.close(code=4401)
+                return
+            decode_token(token, runtime_settings.jwt_secret)
+
+        while True:
+            payload = await websocket.receive_json()
+            source_user_id = payload.get("source_user_id")
+            message = str(payload.get("message", "")).strip()
+            if not message:
+                await websocket.send_json({"type": "error", "message": "Message is required."})
+                continue
+
+            overview_payload = websocket.app.state.analytics_service.get_overview(source_user_id)
+            correlations_payload = websocket.app.state.analytics_service.get_correlations(source_user_id)
+            messages = [
+                {
+                    "role": "system",
+                    "content": (
+                        "You are Stella, a privacy-first health intelligence assistant. "
+                        "Respond concisely, reference metrics when present, and never diagnose."
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": (
+                        f"Overview: {overview_payload}\n"
+                        f"Correlations: {correlations_payload['pairs'][:5]}\n"
+                        f"Question: {message}"
+                    ),
+                },
+            ]
+
+            for chunk in websocket.app.state.llm_gateway.stream_chat(messages):
+                await websocket.send_json({"type": "chunk", "content": chunk})
+            await websocket.send_json({"type": "done"})
+    except Exception as exc:
+        if websocket.application_state.value == 1:
+            await websocket.send_json({"type": "error", "message": str(exc)})
+            await websocket.close(code=1011)
+
 
 if __name__ == "__main__":
     uvicorn.run("backend.main:app", host="127.0.0.1", port=8000, reload=True)

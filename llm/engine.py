@@ -1,85 +1,197 @@
+from __future__ import annotations
 
-import ollama
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, Iterable
 import json
+import os
 
-def analyze_health_data(user_summary: dict) -> str:
-    """
-    Sends the structured health summary to the local LLM (Mistral)
-    and returns a concise, behavioral interpretation.
-    """
-    
-    # 1. Construct the System Prompt (Guardrails)
-    system_prompt = """
-    You are an AI Health Assistant named Stella.
-    Your goal is to interpret wearable data trends for a user.
-    
-    RULES:
-    1. DO NOT provide medical diagnoses or advice.
-    2. DO NOT mention specific diseases (e.g., "You might have diabetes").
-    3. Focus on BEHAVIORAL insights (e.g., "Your sleep consistency has dropped").
-    4. Be professionally encouraging but direct about negative trends.
-    5. Keep the response under 150 words.
-    6. Use bullet points for key insights.
-    """
+import httpx
 
-    # 2. Construct User Message
-    user_prompt = f"""
-    Here is the user's latest health data summary:
-    {json.dumps(user_summary, indent=2)}
-    
-    Please analyze:
-    - Sleep trends (Quantity and consistency)
-    - Activity levels (Steps and intensity)
-    - Overall health score
-    - Any specific anomalies flagged
-    
-    Provide a "Status Update" and 2-3 specific "Actionable Tips".
-    """
 
+@dataclass(slots=True)
+class LLMConfig:
+    provider: str
+    model: str
+    base_url: str
+    api_key_env: str | None = None
+    temperature: float = 0.2
+    max_tokens: int = 512
+    timeout_sec: int = 60
+
+
+class LLMGateway:
+    def __init__(self, config_path: str | Path = "llm_config.yaml") -> None:
+        self.config_path = Path(config_path)
+        self.config = load_llm_config(self.config_path)
+
+    def refresh(self) -> None:
+        self.config = load_llm_config(self.config_path)
+
+    def chat(self, messages: list[dict[str, str]]) -> str:
+        provider = self.config.provider.lower()
+        if provider == "ollama":
+            return _ollama_chat(self.config, messages)
+        if provider in {"lmstudio", "openai_compat", "llamacpp"}:
+            return _openai_compatible_chat(self.config, messages)
+        raise ValueError(f"Unsupported LLM provider: {self.config.provider}")
+
+    def stream_chat(self, messages: list[dict[str, str]]) -> Iterable[str]:
+        provider = self.config.provider.lower()
+        if provider == "ollama":
+            return _ollama_stream(self.config, messages)
+        if provider in {"lmstudio", "openai_compat", "llamacpp"}:
+            return _openai_compatible_stream(self.config, messages)
+        raise ValueError(f"Unsupported LLM provider: {self.config.provider}")
+
+    def analyze_health_data(self, summary: dict[str, Any]) -> str:
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    "You are Stella, a privacy-first health intelligence assistant. "
+                    "Interpret wearable and health trends without giving medical diagnoses. "
+                    "Focus on behavioral insights, risk factors, and next-step observations."
+                ),
+            },
+            {
+                "role": "user",
+                "content": (
+                    "Summarize this health snapshot in under 160 words with a status line, "
+                    "2 short findings, and 2 next-step suggestions.\n"
+                    f"{json.dumps(summary, indent=2)}"
+                ),
+            },
+        ]
+        return self.chat(messages)
+
+
+def load_llm_config(config_path: str | Path) -> LLMConfig:
+    path = Path(config_path)
+    if not path.exists():
+        raise FileNotFoundError(f"Missing LLM config file: {path}")
+    values = _parse_yaml_like(path.read_text(encoding="utf-8"))
+    return LLMConfig(
+        provider=str(values.get("provider", "ollama")),
+        model=str(values.get("model", "mistral")),
+        base_url=str(values.get("base_url", "http://localhost:11434")).rstrip("/"),
+        api_key_env=values.get("api_key_env") or None,
+        temperature=float(values.get("temperature", 0.2)),
+        max_tokens=int(values.get("max_tokens", 512)),
+        timeout_sec=int(values.get("timeout_sec", 60)),
+    )
+
+
+def _parse_yaml_like(raw_text: str) -> dict[str, Any]:
     try:
-        # 3. Call Ollama
-        response = ollama.chat(model='mistral:latest', messages=[
-            {'role': 'system', 'content': system_prompt},
-            {'role': 'user', 'content': user_prompt}
-        ])
-        
-        return response['message']['content']
+        import yaml  # type: ignore
 
-    except Exception as e:
-        return f"Error generating insight: {str(e)}. Ensure Ollama is running."
+        return yaml.safe_load(raw_text) or {}
+    except ImportError:
+        values: dict[str, Any] = {}
+        for line in raw_text.splitlines():
+            stripped = line.strip()
+            if not stripped or stripped.startswith("#") or ":" not in stripped:
+                continue
+            key, raw_value = stripped.split(":", 1)
+            value = raw_value.strip()
+            if value in {"", "null", "None"}:
+                values[key.strip()] = None
+            elif value.lower() in {"true", "false"}:
+                values[key.strip()] = value.lower() == "true"
+            else:
+                try:
+                    if "." in value:
+                        values[key.strip()] = float(value)
+                    else:
+                        values[key.strip()] = int(value)
+                except ValueError:
+                    values[key.strip()] = value
+        return values
 
-def chat_with_stella(context: dict, user_message: str):
-    """
-    Handles interactive chat with Stella, using the user's health context.
-    Returns a generator that yields chunks of the response.
-    """
-    system_prompt = f"""
-    You are Stella, an AI Health Assistant.
-    Answer the user's question based on their health data context below.
-    
-    USER CONTEXT:
-    {json.dumps(context, indent=2)}
-    
-    RULES:
-    1. Be concise (under 3 sentences unless asked for detail).
-    2. Use a friendly, professional tone.
-    3. Refer to specific metrics in the context if relevant.
-    4. If the user asks about something not in the data, say you don't know but offer general advice.
-    5. NO MEDICAL DIAGNOSIS.
-    """
 
-    try:
-        stream = ollama.chat(
-            model='mistral:latest', 
-            messages=[
-                {'role': 'system', 'content': system_prompt},
-                {'role': 'user', 'content': user_message}
-            ],
-            stream=True
-        )
-        
-        for chunk in stream:
-            yield chunk['message']['content']
-            
-    except Exception as e:
-        yield f"I'm having trouble thinking right now. (Error: {str(e)})"
+def _headers(config: LLMConfig) -> dict[str, str]:
+    headers = {"Content-Type": "application/json"}
+    if config.api_key_env:
+        api_key = os.getenv(config.api_key_env, "")
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
+    return headers
+
+
+def _ollama_chat(config: LLMConfig, messages: list[dict[str, str]]) -> str:
+    response = httpx.post(
+        f"{config.base_url}/api/chat",
+        json={"model": config.model, "messages": messages, "stream": False},
+        headers=_headers(config),
+        timeout=config.timeout_sec,
+    )
+    response.raise_for_status()
+    payload = response.json()
+    return payload.get("message", {}).get("content", "").strip()
+
+
+def _ollama_stream(config: LLMConfig, messages: list[dict[str, str]]) -> Iterable[str]:
+    with httpx.stream(
+        "POST",
+        f"{config.base_url}/api/chat",
+        json={"model": config.model, "messages": messages, "stream": True},
+        headers=_headers(config),
+        timeout=config.timeout_sec,
+    ) as response:
+        response.raise_for_status()
+        for line in response.iter_lines():
+            if not line:
+                continue
+            payload = json.loads(line)
+            chunk = payload.get("message", {}).get("content", "")
+            if chunk:
+                yield chunk
+
+
+def _openai_compatible_chat(config: LLMConfig, messages: list[dict[str, str]]) -> str:
+    response = httpx.post(
+        f"{config.base_url}/v1/chat/completions",
+        json={
+            "model": config.model,
+            "messages": messages,
+            "temperature": config.temperature,
+            "max_tokens": config.max_tokens,
+            "stream": False,
+        },
+        headers=_headers(config),
+        timeout=config.timeout_sec,
+    )
+    response.raise_for_status()
+    payload = response.json()
+    choices = payload.get("choices", [])
+    if not choices:
+        return ""
+    return choices[0].get("message", {}).get("content", "").strip()
+
+
+def _openai_compatible_stream(config: LLMConfig, messages: list[dict[str, str]]) -> Iterable[str]:
+    with httpx.stream(
+        "POST",
+        f"{config.base_url}/v1/chat/completions",
+        json={
+            "model": config.model,
+            "messages": messages,
+            "temperature": config.temperature,
+            "max_tokens": config.max_tokens,
+            "stream": True,
+        },
+        headers=_headers(config),
+        timeout=config.timeout_sec,
+    ) as response:
+        response.raise_for_status()
+        for line in response.iter_lines():
+            if not line or not line.startswith("data: "):
+                continue
+            payload_text = line[6:].strip()
+            if payload_text == "[DONE]":
+                break
+            payload = json.loads(payload_text)
+            delta = payload.get("choices", [{}])[0].get("delta", {}).get("content", "")
+            if delta:
+                yield delta

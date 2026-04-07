@@ -1,63 +1,55 @@
-# Stella
+# Stella v2
 
-**Privacy-First AI Health Analytics**
+Stella v2 is a privacy-first health intelligence platform that keeps health data local while exposing a modern ingestion, analytics, and chat workflow.
 
-Stella is a local, full-stack health analytics platform that processes wearable data (Fitbit) and uses a local LLM (Mistral via Ollama) to generate behavioral insights without sending data to the cloud.
+## What changed
 
----
+- Unified file imports for Apple Health XML, Google Takeout JSON, Fitbit CSV bundles, Oura JSON, Garmin FIT, and manual CSV.
+- DuckDB-backed normalized event storage plus daily overview and correlation materializations.
+- Provider-swappable LLM gateway configured through `llm_config.yaml`.
+- FastAPI v2 routes with JWT auth, import endpoint, overview analytics, report generation, and WebSocket chat.
+- React + Vite frontend replacing the archived Streamlit dashboard at `archive/dashboard_v1.py`.
 
-## 🚀 Quick Start (Windows)
+## Local run
 
-1.  **Install Dependencies**
-    ```bash
-    pip install -r requirements.txt
-    ```
+### Backend
 
-2.  **Ensure Ollama is Running**
-    -   Download from [ollama.com](https://ollama.com).
-    -   Run `ollama pull mistral` in your terminal.
-
-3.  **Launch Stella**
-    Double-click `run_stella.bat`
-    (Or run `./run_stella.bat` in terminal)
-
-    This will start:
-    -   Backend API: `http://127.0.0.1:8000`
-    -   Frontend Dashboard: `http://localhost:8501`
-
----
-
-## 📂 Project Structure
-
-```
-Stella/
-├── analytics/          # Data processing pipeline
-│   ├── ingest.py       # CSV loading & merging
-│   ├── features.py     # Rolling averages & Z-scores
-│   └── anomaly.py      # Statistical anomaly detection
-├── backend/            # FastAPI Server
-│   └── main.py         # API Endpoints & Logic
-├── frontend/           # Streamlit Dashboard
-│   └── dashboard.py    # UI & Visualization
-├── llm/                # AI Engine
-│   └── engine.py       # Ollama Integration
-├── data/               # Local Data Storage
-└── run_stella.bat      # One-click Launcher
+```bash
+pip install -r requirements.txt
+uvicorn backend.main:app --reload
 ```
 
-## 🛠 Tech Stack
+The backend bootstraps the sample Fitbit files in `data/raw/` if the DuckDB store is empty.
 
--   **Frontend**: Streamlit (Python)
--   **Backend**: FastAPI (Python)
--   **AI Engine**: Ollama (Mistral 7B)
--   **Data**: Pandas, Plotly
+### Frontend
 
-## 💬 New Feature: Interactive Chat
-You can now ask Stella questions about the data!
-- "Why is my sleep score low?"
-- "How do I compare to last week?"
-- "Give me a summary of my anomalies."
+```bash
+cd frontend
+npm install
+npm run dev
+```
 
-## 🔒 Privacy Note
+The default frontend origin is `http://127.0.0.1:5173`. Default credentials are `stella / stella` unless overridden with env vars.
 
-All data processing happens locally on your machine. No health data is uploaded to any external server.
+## Docker
+
+```bash
+docker compose up --build
+```
+
+Use the optional Ollama sidecar with:
+
+```bash
+docker compose --profile local-llm up --build
+```
+
+## Tests
+
+```bash
+pytest
+cd frontend && npm run test
+```
+
+## Architecture
+
+The updated architecture diagram lives at `stella_v2_architecture.svg`.

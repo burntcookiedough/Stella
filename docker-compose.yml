@@ -1,0 +1,43 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    environment:
+      STELLA_FRONTEND_ORIGIN: http://localhost:5173
+      STELLA_DEV_BYPASS: "false"
+      STELLA_USERNAME: stella
+      STELLA_PASSWORD: stella
+      STELLA_JWT_SECRET: replace-me
+      STELLA_LLM_CONFIG: /app/llm_config.yaml
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data
+      - ./llm_config.yaml:/app/llm_config.yaml:ro
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz').read()"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    ports:
+      - "5173:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+
+  ollama:
+    image: ollama/ollama:latest
+    profiles: ["local-llm"]
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama:/root/.ollama
+
+volumes:
+  ollama:

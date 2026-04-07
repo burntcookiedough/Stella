@@ -1,0 +1,78 @@
+<svg width="1200" height="860" viewBox="0 0 1200 860" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1200" height="860" fill="#071012"/>
+  <text x="600" y="56" fill="#E8F0EE" font-size="30" font-family="Arial" text-anchor="middle">Stella v2 Architecture</text>
+  <text x="600" y="84" fill="#8F9A9A" font-size="14" font-family="Arial" text-anchor="middle">Privacy-first health intelligence with local storage, native adapters, and a React client</text>
+
+  <g>
+    <rect x="70" y="128" width="240" height="94" rx="22" fill="#0C2A23" stroke="#8DF0C6" />
+    <text x="190" y="162" fill="#E8F0EE" font-size="20" font-family="Arial" text-anchor="middle">Data Sources</text>
+    <text x="190" y="190" fill="#8F9A9A" font-size="14" font-family="Arial" text-anchor="middle">Apple Health XML</text>
+    <text x="190" y="210" fill="#8F9A9A" font-size="14" font-family="Arial" text-anchor="middle">Google Takeout JSON | Fitbit CSV</text>
+  </g>
+
+  <g>
+    <rect x="350" y="128" width="240" height="94" rx="22" fill="#13212A" stroke="#5CA7FF" />
+    <text x="470" y="162" fill="#E8F0EE" font-size="20" font-family="Arial" text-anchor="middle">Unified Ingestor</text>
+    <text x="470" y="190" fill="#8F9A9A" font-size="14" font-family="Arial" text-anchor="middle">Parsers normalize to</text>
+    <text x="470" y="210" fill="#8F9A9A" font-size="14" font-family="Arial" text-anchor="middle">timestamp, metric, value, unit, source</text>
+  </g>
+
+  <g>
+    <rect x="630" y="128" width="240" height="94" rx="22" fill="#241B11" stroke="#F6B85B" />
+    <text x="750" y="162" fill="#E8F0EE" font-size="20" font-family="Arial" text-anchor="middle">DuckDB Store</text>
+    <text x="750" y="190" fill="#8F9A9A" font-size="14" font-family="Arial" text-anchor="middle">raw_events</text>
+    <text x="750" y="210" fill="#8F9A9A" font-size="14" font-family="Arial" text-anchor="middle">overview_daily | correlation_pairs</text>
+  </g>
+
+  <g>
+    <rect x="910" y="128" width="220" height="94" rx="22" fill="#23131A" stroke="#F58AB0" />
+    <text x="1020" y="162" fill="#E8F0EE" font-size="20" font-family="Arial" text-anchor="middle">Nightly Refresh</text>
+    <text x="1020" y="190" fill="#8F9A9A" font-size="14" font-family="Arial" text-anchor="middle">APScheduler recomputes</text>
+    <text x="1020" y="210" fill="#8F9A9A" font-size="14" font-family="Arial" text-anchor="middle">z-scores and lagged correlations</text>
+  </g>
+
+  <g>
+    <rect x="160" y="330" width="360" height="120" rx="26" fill="#0F181A" stroke="#8DF0C6" />
+    <text x="340" y="370" fill="#E8F0EE" font-size="24" font-family="Arial" text-anchor="middle">FastAPI Backend</text>
+    <text x="340" y="400" fill="#8F9A9A" font-size="15" font-family="Arial" text-anchor="middle">/v1/imports | /v1/overview | /v1/analytics/correlations</text>
+    <text x="340" y="424" fill="#8F9A9A" font-size="15" font-family="Arial" text-anchor="middle">/v1/reports/pdf | /v1/auth/login | /v1/chat/ws</text>
+  </g>
+
+  <g>
+    <rect x="610" y="330" width="260" height="120" rx="26" fill="#101A20" stroke="#5CA7FF" />
+    <text x="740" y="370" fill="#E8F0EE" font-size="24" font-family="Arial" text-anchor="middle">LLM Gateway</text>
+    <text x="740" y="400" fill="#8F9A9A" font-size="15" font-family="Arial" text-anchor="middle">llm_config.yaml</text>
+    <text x="740" y="424" fill="#8F9A9A" font-size="15" font-family="Arial" text-anchor="middle">ollama | lmstudio | llamacpp | openai_compat</text>
+  </g>
+
+  <g>
+    <rect x="920" y="330" width="210" height="120" rx="26" fill="#141414" stroke="#B9C1C1" />
+    <text x="1025" y="370" fill="#E8F0EE" font-size="24" font-family="Arial" text-anchor="middle">JWT Auth</text>
+    <text x="1025" y="400" fill="#8F9A9A" font-size="15" font-family="Arial" text-anchor="middle">Single-user first</text>
+    <text x="1025" y="424" fill="#8F9A9A" font-size="15" font-family="Arial" text-anchor="middle">Loopback dev bypass only</text>
+  </g>
+
+  <g>
+    <rect x="120" y="560" width="420" height="146" rx="28" fill="#0E1819" stroke="#8DF0C6" />
+    <text x="330" y="604" fill="#E8F0EE" font-size="26" font-family="Arial" text-anchor="middle">React + Vite Frontend</text>
+    <text x="330" y="638" fill="#8F9A9A" font-size="16" font-family="Arial" text-anchor="middle">Overview | Chat | Deep Analytics | Reports</text>
+    <text x="330" y="664" fill="#8F9A9A" font-size="16" font-family="Arial" text-anchor="middle">TanStack Query, Recharts, Plotly, WebSocket streaming</text>
+  </g>
+
+  <g>
+    <rect x="620" y="560" width="510" height="146" rx="28" fill="#121515" stroke="#B9C1C1" />
+    <text x="875" y="604" fill="#E8F0EE" font-size="26" font-family="Arial" text-anchor="middle">Packaging and Delivery</text>
+    <text x="875" y="638" fill="#8F9A9A" font-size="16" font-family="Arial" text-anchor="middle">Docker Compose: backend, frontend, optional ollama sidecar</text>
+    <text x="875" y="664" fill="#8F9A9A" font-size="16" font-family="Arial" text-anchor="middle">GitHub Actions: ruff, pytest, frontend test/build, image build</text>
+  </g>
+
+  <path d="M310 175H350" stroke="#8F9A9A" stroke-width="2"/>
+  <path d="M590 175H630" stroke="#8F9A9A" stroke-width="2"/>
+  <path d="M870 175H910" stroke="#8F9A9A" stroke-width="2"/>
+  <path d="M340 222V330" stroke="#8F9A9A" stroke-width="2"/>
+  <path d="M740 222V330" stroke="#8F9A9A" stroke-width="2"/>
+  <path d="M1025 222V330" stroke="#8F9A9A" stroke-width="2"/>
+  <path d="M340 450V560" stroke="#8F9A9A" stroke-width="2"/>
+  <path d="M740 450V560" stroke="#8F9A9A" stroke-width="2"/>
+  <path d="M1025 450V560" stroke="#8F9A9A" stroke-width="2"/>
+</svg>

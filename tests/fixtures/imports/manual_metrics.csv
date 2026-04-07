@@ -1,0 +1,4 @@
+timestamp,metric,value,unit,source,source_user_id
+2026-04-03T07:00:00,steps,6500,count,manual,manual-user
+2026-04-03T07:00:00,sleep_minutes,430,min,manual,manual-user
+2026-04-03T07:00:00,resting_hr,59,bpm,manual,manual-user

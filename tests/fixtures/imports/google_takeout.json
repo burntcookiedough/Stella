@@ -1,0 +1,16 @@
+{
+  "points": [
+    {
+      "dataTypeName": "com.google.step_count.delta",
+      "originDataSourceId": "google-user",
+      "startTimeNanos": "1711929600000000000",
+      "fitValue": [{ "intVal": 7421 }]
+    },
+    {
+      "dataTypeName": "com.google.resting_heart_rate.bpm",
+      "originDataSourceId": "google-user",
+      "startTimeNanos": "1711929600000000000",
+      "fitValue": [{ "fpVal": 61.0 }]
+    }
+  ]
+}
