@@ -36,6 +36,15 @@ function Test-CommandAvailable {
     return $null -ne (Get-Command $Name -ErrorAction SilentlyContinue)
 }
 
+function Test-HostOllama {
+    try {
+        $response = Invoke-WebRequest -Uri "http://127.0.0.1:11434/api/tags" -TimeoutSec 5
+        return $response.StatusCode -eq 200
+    } catch {
+        return $false
+    }
+}
+
 function Get-SecureRandomString {
     param(
         [Parameter(Mandatory = $true)]
@@ -181,9 +190,16 @@ function Ensure-DockerEnv {
 Set-Location $PSScriptRoot
 
 $profileArgs = @()
+$llmMode = "metrics-only"
+$llmConfig = "/app/llm_config.docker.yaml"
 if ($env:STELLA_DOCKER_WITH_OLLAMA -eq "1") {
     $profileArgs = @("--profile", "local-llm")
+    $llmMode = "docker-ollama"
+} elseif (Test-HostOllama) {
+    $llmConfig = "/app/llm_config.host_ollama.yaml"
+    $llmMode = "host-ollama"
 }
+$env:STELLA_LLM_CONFIG = $llmConfig
 
 Ensure-DockerPrereqs
 $dockerEnv = Ensure-DockerEnv
@@ -220,10 +236,16 @@ if ($dockerEnv.Created) {
     Write-Warn "Password is stored in .env. Open that file if you need to recover it."
 }
 Write-Host ""
-if ($env:STELLA_DOCKER_WITH_OLLAMA -eq "1") {
-    Write-Host "LLM mode: local-llm profile enabled" -ForegroundColor Green
-} else {
-    Write-Warn "LLM mode: metrics-only by default. Set STELLA_DOCKER_WITH_OLLAMA=1 if you want Ollama sidecar support."
+switch ($llmMode) {
+    "docker-ollama" {
+        Write-Host "LLM mode: local-llm profile enabled" -ForegroundColor Green
+    }
+    "host-ollama" {
+        Write-Host "LLM mode: connected to host Ollama at http://127.0.0.1:11434" -ForegroundColor Green
+    }
+    default {
+        Write-Warn "LLM mode: metrics-only by default. Start Ollama on the host or set STELLA_DOCKER_WITH_OLLAMA=1 for the sidecar profile."
+    }
 }
 Write-Host "Use 'docker compose down' to stop the stack." -ForegroundColor Yellow
 Read-Host "Press Enter to close this launcher"

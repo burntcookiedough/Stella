@@ -12,11 +12,13 @@ services:
       STELLA_USERNAME: ${STELLA_USERNAME}
       STELLA_PASSWORD: ${STELLA_PASSWORD}
       STELLA_JWT_SECRET: ${STELLA_JWT_SECRET}
-      STELLA_LLM_CONFIG: /app/llm_config.docker.yaml
+      STELLA_LLM_CONFIG: ${STELLA_LLM_CONFIG:-/app/llm_config.docker.yaml}
     ports:
       - "8000:8000"
     volumes:
       - stella-runtime:/var/lib/stella
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/readyz').read()"]
       interval: 20s

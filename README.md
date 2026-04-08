@@ -1,133 +1,184 @@
-# Stella
+<p align="center">
+  <img src="./docs/readme-hero.svg" alt="Stella hero" width="100%" />
+</p>
 
-Stella is a single-user local-first health analytics app.
+<p align="center">
+  <strong>Local-first health analytics with a product spine, not a notebook vibe.</strong>
+</p>
 
-Supported product surface:
+<p align="center">
+  Stella is a single-user health intelligence app built from a <code>FastAPI</code> backend, a <code>React + Vite</code> frontend, <code>DuckDB</code> local storage, and optional <code>Ollama</code>-backed summaries.
+  <br />
+  It runs on your machine, keeps runtime data out of the repo, and stays useful even when the model layer is unavailable.
+</p>
 
-- FastAPI backend
-- React + Vite frontend
-- DuckDB local storage
-- Ollama-backed LLM integration with supported metrics-only fallback
-- `run_stella_docker.bat` as the canonical install path
-- `run_stella.bat` as the supported local development path
+<p align="center">
+  <img alt="stack" src="https://img.shields.io/badge/stack-FastAPI%20%7C%20React%20%7C%20DuckDB-0D1117?style=for-the-badge&labelColor=0A1220&color=2BFFB7" />
+  <img alt="mode" src="https://img.shields.io/badge/runtime-local--first-0D1117?style=for-the-badge&labelColor=0A1220&color=7CC4FF" />
+  <img alt="llm" src="https://img.shields.io/badge/llm-optional-0D1117?style=for-the-badge&labelColor=0A1220&color=F6B85B" />
+  <img alt="release" src="https://img.shields.io/badge/target-v0.1.0-0D1117?style=for-the-badge&labelColor=0A1220&color=B589FF" />
+</p>
 
-Legacy code is isolated under `archive/` and `tools/legacy/`. It is not part of the active product runtime.
+<p align="center">
+  <a href="#the-pitch">The Pitch</a> •
+  <a href="#boot-sequence">Boot Sequence</a> •
+  <a href="#signal-path">Signal Path</a> •
+  <a href="#first-contact">First Contact</a> •
+  <a href="#quality-gate">Quality Gate</a> •
+  <a href="#repo-topography">Repo Topography</a>
+</p>
 
-## Supported startup paths
+## The Pitch
 
-### Docker-first install path
+Stella is not trying to be another cloud dashboard with a wellness skin on top. The active product is a local-first runtime that imports personal health exports, normalizes them into analytics-ready tables, and turns them into overview metrics, correlations, reports, and chat.
 
-Double-click `run_stella_docker.bat`.
+The current supported product surface is:
 
-What it does:
+| Layer | What exists now |
+| --- | --- |
+| Backend | FastAPI endpoints for auth, imports, overview, correlations, PDF reports, health checks, and WebSocket chat |
+| Frontend | React + Vite app with overview, analytics, chat, reports, and import flows |
+| Storage | DuckDB-backed normalized event storage and materialized analytics |
+| AI layer | Ollama-backed summaries with graceful metrics-only fallback |
+| Packaging | Docker-first install path for non-technical use, plus a local dev launcher |
 
-- verifies Docker Desktop and `docker compose`
-- creates `.env` from `.env.example` when needed
-- generates a strong Docker password and JWT secret on first run
-- starts the packaged Stella stack on `http://127.0.0.1:5173`
-- opens the app in your browser after the packaged frontend and backend are ready
+### Hard truths
 
-Notes:
+- `run_stella_docker.bat` is the canonical install path.
+- `run_stella.bat` is the supported contributor path.
+- `archive/` and `tools/legacy/` are not part of the active runtime.
+- Stella starts empty on purpose. No sample data is auto-imported in supported product paths.
+- If Ollama is unavailable, the product should degrade instead of collapsing.
 
-- Docker Desktop is the supported non-technical-user install path
-- runtime data is stored only in the `stella-runtime` named Docker volume
-- Ollama is optional
-- set `STELLA_DOCKER_WITH_OLLAMA=1` before launch if you want the real `local-llm` profile
+## Boot Sequence
 
-### Local development path
+Two startup paths are first-class. Pick the one that matches your job.
 
-Double-click `run_stella.bat`.
+| Mode | Use it when | Entry point | What happens |
+| --- | --- | --- | --- |
+| Docker-first | You want the supported product install path | `run_stella_docker.bat` | Creates `.env` from `.env.example` if needed, generates strong credentials on first run, boots the packaged stack, and opens the app once frontend and backend are reachable |
+| Local dev | You are actively developing inside the repo | `run_stella.bat` | Verifies Python and frontend dependencies, starts backend on `:8000`, starts Vite on `:5173`, and opens the browser after both are ready |
 
-What it does:
-
-- verifies Python and frontend dependencies
-- starts the FastAPI backend on `http://127.0.0.1:8000`
-- starts the Vite frontend on `http://127.0.0.1:5173`
-- opens the app in your browser once both services are reachable
-
-Local dev keeps convenience auth defaults. Docker mode does not.
-
-## Docker configuration
-
-Use `.env.example` as the template for Docker runtime configuration.
-
-Required Docker runtime values:
-
-- `STELLA_USERNAME`
-- `STELLA_PASSWORD`
-- `STELLA_JWT_SECRET`
-- `STELLA_FRONTEND_ORIGIN`
-
-For the supported Docker product path:
-
-- the launcher generates `.env` automatically on first run
-- Docker auth values must be explicit and strong
-- the frontend talks to the backend through same-origin `/api/*` and `/ws`
-
-Manual compose commands:
+### Manual compose path
 
 ```bash
 docker compose up -d --build
 docker compose down
 ```
 
-Optional real Ollama sidecar:
+Optional Ollama sidecar:
 
 ```bash
 docker compose --profile local-llm up -d --build
 ```
 
-## Runtime data
+### Runtime contract
 
-By default Stella keeps runtime state out of the repository.
+The packaged app is expected on `http://127.0.0.1:5173`.
+
+- Frontend talks to backend through same-origin `/api/*` and `/ws`
+- Docker runtime data lives in the named volume `stella-runtime`
+- Local runtime data stays outside repo root
+- Docker mode requires explicit strong auth values
+- Local dev keeps convenience auth defaults
+
+## Signal Path
+
+<p align="center">
+  <img src="./stella_v2_architecture.svg" alt="Stella v2 architecture" width="100%" />
+</p>
+
+This is the product loop in plain English:
+
+1. Import wearable exports and health files.
+2. Normalize them into stable event rows inside DuckDB.
+3. Materialize overview and correlation views for the frontend.
+4. Generate reports and optional language summaries on top.
+5. Keep the machine usable even if the model layer disappears.
+
+### Active API surface
+
+| Route | Purpose |
+| --- | --- |
+| `GET /healthz` | Basic liveness |
+| `GET /readyz` | Runtime readiness plus data and LLM status |
+| `POST /v1/auth/login` | Single-user auth token issuance |
+| `POST /v1/imports` | File ingestion |
+| `GET /v1/overview` | Overview analytics |
+| `GET /v1/analytics/correlations` | Correlation analysis |
+| `POST /v1/reports/pdf` | PDF report generation |
+| `WS /v1/chat/ws` | Streaming chat |
+
+## First Contact
+
+On a fresh install, the right behavior is boring and honest:
+
+- Stella launches successfully with no imported data.
+- Login and overview make it clear the app is installed but empty.
+- Importing real data unlocks overview, analytics, reports, and chat.
+- If the LLM is unreachable, Stella still provides metrics-backed behavior instead of a broken UI.
+
+Supported import story in the repo currently references sources like Fitbit, Apple Health, Google Takeout, Oura, Garmin, and manual CSV exports.
+
+### Docker runtime environment
+
+Use `.env.example` as the template. The Docker path needs these values:
+
+```env
+STELLA_FRONTEND_ORIGIN=http://localhost:5173
+STELLA_USERNAME=stella
+STELLA_PASSWORD=GENERATED_AT_FIRST_RUN
+STELLA_JWT_SECRET=GENERATED_AT_FIRST_RUN
+```
+
+The launcher generates strong runtime credentials on first run when `.env` does not exist.
+
+### Runtime data
 
 - Windows: `%LOCALAPPDATA%\Stella`
 - macOS: `~/Library/Application Support/Stella`
 - Linux: `${XDG_DATA_HOME:-~/.local/share}/stella`
+- Docker: `stella-runtime` named volume
 
-That runtime directory holds the generated DuckDB database, uploads, and copied local `llm_config.yaml`.
+That runtime area holds the generated DuckDB database, uploads, and copied local `llm_config.yaml`.
 
-Docker uses the named volume `stella-runtime` instead of OS app-data directories.
+## Quality Gate
 
-## First run
+Stella is being pushed toward a Docker-first product release, so the README should not pretend ad hoc runs are enough. The primary checks in the repo are:
 
-Stella starts empty by default.
+```bash
+ruff check .
+pytest
+cd frontend && npm run test
+cd frontend && npm run build
+cd frontend && npm run test:e2e
+docker compose build backend
+docker compose build frontend
+python tools/smoke/docker_smoke.py --mode all
+```
 
-- no sample data is auto-imported in supported product paths
-- login and overview explain that the app is installed correctly but waiting for a real data import
-- import a Fitbit, Apple Health, Google Takeout, Oura, Garmin, or manual CSV export to unlock analytics, reports, and chat
-- if Ollama is unavailable, Stella remains usable in metrics-only mode
+Release discipline lives in [`docs/release-checklist.md`](./docs/release-checklist.md).
 
-## Tests and smoke
-
-Primary CI gates:
-
-- `ruff check .`
-- `pytest`
-- `cd frontend && npm run test`
-- `cd frontend && npm run build`
-- `cd frontend && npm run test:e2e`
-- backend Docker build
-- frontend Docker build
-- `python tools/smoke/docker_smoke.py --mode all`
-
-The Docker smoke entrypoint validates:
-
-- packaged frontend reachability
-- backend readiness
-- login through the same-origin `/api` path
-- first-run empty runtime state
-- import flow
-- overview and report success
-- degraded chat failure when no LLM is available
-- successful chat/report behavior in stubbed smoke LLM mode
-
-## Release discipline
-
-Use the release checklist in [docs/release-checklist.md](docs/release-checklist.md).
-
-Versioning policy:
+The release line is simple:
 
 - first Docker-first milestone: `v0.1.0`
-- patch for bug-fix-only releases
-- minor for user-visible product polish and workflow improvements
+- patch releases for bug-fix-only changes
+- minor releases for user-visible polish and workflow improvements
+
+## Repo Topography
+
+```text
+.
+|-- backend/      FastAPI app, auth, config, reports
+|-- frontend/     React + Vite client, tests, E2E
+|-- analytics/    feature extraction, anomalies, pipelines, storage
+|-- llm/          model gateway and runtime integration
+|-- tools/smoke/  Docker smoke runner
+|-- docs/         release notes and project docs
+|-- archive/      old code kept out of the active product
+`-- tests/        Python test suite
+```
+
+## Why This README Looks Like This
+
+Stella is already more product than prototype, so the README should read like an installation surface and a systems brief, not a dump of setup trivia. The flash is intentional. The claims are not.
