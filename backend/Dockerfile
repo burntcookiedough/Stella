@@ -10,6 +10,7 @@ COPY backend ./backend
 COPY llm ./llm
 COPY llm_config.yaml .
 COPY llm_config.docker.yaml .
+COPY llm_config.host_ollama.yaml .
 COPY llm_config.smoke.yaml .
 COPY data ./data
 
