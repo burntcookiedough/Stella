@@ -87,7 +87,7 @@ def _initialize_state(application: FastAPI) -> None:
     application.state.store = HealthStore(settings.duckdb_path)
     application.state.analytics_service = HealthAnalyticsService(application.state.store)
     application.state.llm_gateway = LLMGateway(settings.llm_config_path)
-    application.state.analytics_service.bootstrap_fitbit_sample(settings.data_dir / "raw")
+    application.state.analytics_service.bootstrap_fitbit_sample(settings.sample_data_dir)
 
     if settings.scheduler_enabled and BackgroundScheduler is not None:
         scheduler = BackgroundScheduler(timezone="UTC")

@@ -66,7 +66,21 @@ function Wait-ForHttp {
 }
 
 function Get-ConfiguredOllamaModel {
-    $configPath = Join-Path $PSScriptRoot "llm_config.yaml"
+    if ($env:STELLA_LLM_CONFIG) {
+        $configPath = $env:STELLA_LLM_CONFIG
+    } else {
+        $runtimeRoot = if ($env:STELLA_BASE_DIR) {
+            $env:STELLA_BASE_DIR
+        } elseif ($env:LOCALAPPDATA) {
+            Join-Path $env:LOCALAPPDATA "Stella"
+        } else {
+            Join-Path $PSScriptRoot ".stella-runtime"
+        }
+
+        $runtimeConfig = Join-Path $runtimeRoot "llm_config.yaml"
+        $configPath = if (Test-Path $runtimeConfig) { $runtimeConfig } else { Join-Path $PSScriptRoot "llm_config.yaml" }
+    }
+
     if (-not (Test-Path $configPath)) {
         return "mistral"
     }

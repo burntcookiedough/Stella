@@ -4,19 +4,19 @@ services:
       context: .
       dockerfile: backend/Dockerfile
     environment:
-      STELLA_FRONTEND_ORIGIN: http://localhost:5173
+      STELLA_BASE_DIR: /var/lib/stella
+      STELLA_FRONTEND_ORIGIN: ${STELLA_FRONTEND_ORIGIN:-http://localhost:5173}
       STELLA_DEV_BYPASS: "false"
-      STELLA_USERNAME: stella
-      STELLA_PASSWORD: stella
-      STELLA_JWT_SECRET: replace-me
-      STELLA_LLM_CONFIG: /app/llm_config.yaml
+      STELLA_USERNAME: ${STELLA_USERNAME:-stella}
+      STELLA_PASSWORD: ${STELLA_PASSWORD:-stella}
+      STELLA_JWT_SECRET: ${STELLA_JWT_SECRET:-replace-me}
+      STELLA_LLM_CONFIG: /app/llm_config.docker.yaml
     ports:
       - "8000:8000"
     volumes:
-      - ./data:/app/data
-      - ./llm_config.yaml:/app/llm_config.yaml:ro
+      - stella-runtime:/var/lib/stella
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz').read()"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/readyz').read()"]
       interval: 20s
       timeout: 5s
       retries: 5
@@ -41,3 +41,4 @@ services:
 
 volumes:
   ollama:
+  stella-runtime:

@@ -1,6 +1,5 @@
-import { useDeferredValue, useState } from "react";
+import { Fragment, useDeferredValue, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import Plot from "react-plotly.js";
 
 import { fetchCorrelations } from "../api/client";
 
@@ -34,31 +33,36 @@ export function AnalyticsPage() {
           <p className="eyebrow">Correlation matrix</p>
           <h3>Metric relationships</h3>
         </div>
-        <div className="plot-shell">
-          <Plot
-            data={[
-              {
-                z: heatmap,
-                x: labels,
-                y: labels,
-                type: "heatmap",
-                colorscale: [
-                  [0, "#122025"],
-                  [0.5, "#2f6c7a"],
-                  [1, "#8df0c6"],
-                ],
-              },
-            ]}
-            layout={{
-              paper_bgcolor: "transparent",
-              plot_bgcolor: "transparent",
-              font: { color: "#d5dddd" },
-              margin: { l: 40, r: 20, t: 20, b: 40 },
-            }}
-            style={{ width: "100%", height: "100%" }}
-            config={{ displayModeBar: false, responsive: true }}
-          />
-        </div>
+        {labels.length ? (
+          <div
+            className="matrix-grid"
+            style={{ gridTemplateColumns: `minmax(140px, 1.4fr) repeat(${labels.length}, minmax(72px, 1fr))` }}
+          >
+            <div className="matrix-corner">Metric</div>
+            {labels.map((label) => (
+              <div key={`column-${label}`} className="matrix-axis">
+                {label}
+              </div>
+            ))}
+            {labels.map((rowLabel, rowIndex) => (
+              <Fragment key={rowLabel}>
+                <div className="matrix-axis matrix-axis-row">{rowLabel}</div>
+                {heatmap[rowIndex].map((value, columnIndex) => (
+                  <div
+                    key={`${rowLabel}-${labels[columnIndex]}`}
+                    className="matrix-cell"
+                    style={{ background: correlationColor(value) }}
+                    title={`${rowLabel} vs ${labels[columnIndex]}: ${value.toFixed(3)}`}
+                  >
+                    {value.toFixed(2)}
+                  </div>
+                ))}
+              </Fragment>
+            ))}
+          </div>
+        ) : (
+          <p className="muted-copy">Correlation pairs will appear after Stella has enough imported history.</p>
+        )}
       </section>
 
       <section className="panel">
@@ -87,4 +91,14 @@ export function AnalyticsPage() {
       </section>
     </div>
   );
+}
+
+function correlationColor(value: number): string {
+  const normalized = Math.max(-1, Math.min(1, value));
+  if (normalized >= 0) {
+    const alpha = 0.18 + normalized * 0.42;
+    return `rgba(123, 219, 192, ${alpha.toFixed(3)})`;
+  }
+  const alpha = 0.14 + Math.abs(normalized) * 0.34;
+  return `rgba(121, 184, 255, ${alpha.toFixed(3)})`;
 }

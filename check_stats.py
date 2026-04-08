@@ -1,5 +1,3 @@
-import sys
-import pandas as pd
 from analytics.ingest import load_data
 from analytics.features import compute_features
 from analytics.anomaly import detect_anomalies
