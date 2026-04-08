@@ -87,7 +87,8 @@ def _initialize_state(application: FastAPI) -> None:
     application.state.store = HealthStore(settings.duckdb_path)
     application.state.analytics_service = HealthAnalyticsService(application.state.store)
     application.state.llm_gateway = LLMGateway(settings.llm_config_path)
-    application.state.analytics_service.bootstrap_fitbit_sample(settings.sample_data_dir)
+    if settings.sample_bootstrap_enabled:
+        application.state.analytics_service.bootstrap_fitbit_sample(settings.sample_data_dir)
 
     if settings.scheduler_enabled and BackgroundScheduler is not None:
         scheduler = BackgroundScheduler(timezone="UTC")
@@ -127,7 +128,6 @@ app.add_middleware(
     allow_origins=[
         settings.frontend_origin,
         "http://localhost:5173",
-        "http://localhost:8501",  # Support legacy streamlit if needed
     ],
     allow_credentials=True,
     allow_methods=["*"],

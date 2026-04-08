@@ -1,9 +1,9 @@
 import { useQuery } from "@tanstack/react-query";
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
-import { fetchOverview } from "../api/client";
+import { fetchOverview, type ReadyStateResponse } from "../api/client";
 
-export function OverviewPage() {
+export function OverviewPage({ runtime }: { runtime?: ReadyStateResponse }) {
   const { data, isLoading } = useQuery({
     queryKey: ["overview"],
     queryFn: () => fetchOverview(),
@@ -16,6 +16,45 @@ export function OverviewPage() {
   const latest = data?.latest;
   const trendData = data?.trend_slices ?? [];
   const anomalies = data?.anomalies ?? [];
+
+  if ((runtime && !runtime.has_data) || (!latest && trendData.length === 0)) {
+    return (
+      <section className="panel empty-state-panel">
+        <div className="panel-heading">
+          <p className="eyebrow">First run</p>
+          <h3>Stella is ready for your first import</h3>
+        </div>
+        <p className="muted-copy">
+          This workspace starts empty on purpose. Import a Fitbit, Apple Health, Google Takeout, Oura, Garmin, or
+          manual CSV export to generate your first overview.
+        </p>
+        <div className="empty-state-grid">
+          <div className="empty-state-card">
+            <p className="control-label">1. Gather your export files</p>
+            <p className="status">Choose the raw files exactly as they came from the provider export bundle.</p>
+          </div>
+          <div className="empty-state-card">
+            <p className="control-label">2. Run the first import</p>
+            <p className="status">Use the import panel in the workspace header to ingest the files into Stella.</p>
+          </div>
+          <div className="empty-state-card">
+            <p className="control-label">3. Review analytics</p>
+            <p className="status">After import, Stella will unlock overview charts, reports, and deeper analytics.</p>
+          </div>
+          <div className="empty-state-card">
+            <p className="control-label">AI runtime</p>
+            <p className="status">
+              {!runtime
+                ? "Runtime health is still loading."
+                : runtime.llm_reachable
+                ? `LLM ready with ${runtime.llm_provider} / ${runtime.llm_model}.`
+                : "Metrics-only mode is expected until the optional model runtime is available."}
+            </p>
+          </div>
+        </div>
+      </section>
+    );
+  }
 
   return (
     <div className="page-grid">

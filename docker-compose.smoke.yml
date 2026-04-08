@@ -1,0 +1,4 @@
+services:
+  backend:
+    environment:
+      STELLA_LLM_CONFIG: /app/llm_config.smoke.yaml

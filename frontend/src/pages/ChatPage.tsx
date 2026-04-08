@@ -1,7 +1,7 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
 
-import { buildChatSocket } from "../api/client";
+import { buildChatSocket, type ReadyStateResponse } from "../api/client";
 
 type Message = {
   role: "user" | "assistant";
@@ -19,13 +19,14 @@ const CONNECTION_COPY: Record<ConnectionState, string> = {
   interrupted: "Stella restarted while the session was open. Reconnect to continue.",
 };
 
-export function ChatPage() {
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      role: "assistant",
-      content: "Ask about your trends, anomalies, or strongest correlations.",
-    },
-  ]);
+export function ChatPage({
+  runtime,
+  runtimeError,
+}: {
+  runtime?: ReadyStateResponse;
+  runtimeError?: Error | null;
+}) {
+  const [messages, setMessages] = useState<Message[]>([]);
   const [draft, setDraft] = useState("");
   const [streaming, setStreaming] = useState(false);
   const [connectionState, setConnectionState] = useState<ConnectionState>("connecting");
@@ -35,10 +36,37 @@ export function ChatPage() {
   const awaitingReplyRef = useRef(false);
   const terminalReasonRef = useRef<"none" | "error">("none");
 
+  const chatBlockedReason = runtimeError
+    ? "The backend runtime is offline. Restart Stella before opening chat."
+    : !runtime
+      ? "Checking workspace readiness..."
+      : !runtime.has_data
+        ? "Import health data first. Stella chat only becomes useful after the workspace has data to analyze."
+        : !runtime.llm_reachable
+          ? `Chat is unavailable in metrics-only mode. Reports and analytics still work while ${runtime.llm_provider} recovers.`
+          : null;
+  const chatAvailable = !chatBlockedReason;
+  const introMessage = chatBlockedReason ?? "Ask about your trends, anomalies, or strongest correlations.";
+
+  useEffect(() => {
+    setMessages([{ role: "assistant", content: introMessage }]);
+  }, [introMessage]);
+
   useEffect(() => {
     terminalReasonRef.current = "none";
     awaitingReplyRef.current = false;
     setStreaming(false);
+
+    if (!chatAvailable) {
+      if (socketRef.current) {
+        socketRef.current.close();
+        socketRef.current = null;
+      }
+      setConnectionState(runtimeError ? "error" : "disconnected");
+      setStatusMessage(chatBlockedReason ?? CONNECTION_COPY.disconnected);
+      return;
+    }
+
     setConnectionState("connecting");
     setStatusMessage(CONNECTION_COPY.connecting);
 
@@ -132,7 +160,7 @@ export function ChatPage() {
       socketRef.current = null;
       socket.close();
     };
-  }, [socketVersion]);
+  }, [chatAvailable, chatBlockedReason, runtimeError, socketVersion]);
 
   function handleSubmit(event: FormEvent<HTMLFormElement>): void {
     event.preventDefault();
@@ -148,6 +176,9 @@ export function ChatPage() {
     socketRef.current.send(JSON.stringify({ message: trimmed }));
   }
 
+  const allowReconnect =
+    chatAvailable && (connectionState === "disconnected" || connectionState === "error" || connectionState === "interrupted");
+
   return (
     <section className="chat-layout">
       <div className="panel chat-transcript">
@@ -156,9 +187,9 @@ export function ChatPage() {
           <h3>Ask Stella about the current data set</h3>
         </div>
         <div className="status-row">
-          <p className={`status-pill ${connectionState}`}>{connectionState}</p>
+          <p className={`status-pill ${chatAvailable ? connectionState : "blocked"}`}>{chatAvailable ? connectionState : "blocked"}</p>
           <p className="status">{statusMessage}</p>
-          {connectionState === "disconnected" || connectionState === "error" || connectionState === "interrupted" ? (
+          {allowReconnect ? (
             <button type="button" className="inline-button" onClick={() => setSocketVersion((current) => current + 1)}>
               Reconnect chat
             </button>
@@ -190,8 +221,9 @@ export function ChatPage() {
           value={draft}
           onChange={(event) => setDraft(event.target.value)}
           placeholder="Why was my sleep score weak this week?"
+          disabled={!chatAvailable}
         />
-        <button type="submit" disabled={!draft.trim() || streaming || connectionState !== "ready"}>
+        <button type="submit" disabled={!draft.trim() || streaming || connectionState !== "ready" || !chatAvailable}>
           {streaming ? "Streaming..." : "Send question"}
         </button>
       </form>

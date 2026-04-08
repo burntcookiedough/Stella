@@ -1,8 +1,0 @@
-Number of unique days: 31 (approx 4.4 weeks)
-Date range: 2016-04-12 00:00:00 to 2016-05-12 00:00:00
-Total anomalies: 35
-  - Sleep anomalies: 6
-  - Steps anomalies: 23
-  - High activity anomalies: 6
-Columns in final dataset: 29
-Columns: ['id', 'date', 'totalsteps', 'totaldistance', 'trackerdistance', 'loggedactivitiesdistance', 'veryactivedistance', 'moderatelyactivedistance', 'lightactivedistance', 'sedentaryactivedistance', 'veryactiveminutes', 'fairlyactiveminutes', 'lightlyactiveminutes', 'sedentaryminutes', 'calories', 'totalsleeprecords', 'totalminutesasleep', 'totaltimeinbed', 'avg_steps_7d', 'avg_sleep_7d', 'steps_zscore', 'sleep_zscore', 'sleep_volatility_7d', 'active_minutes', 'sedentary_ratio', 'health_score', 'is_sleep_anomaly', 'is_steps_anomaly', 'is_high_activity_anomaly']

@@ -7,9 +7,11 @@ services:
       STELLA_BASE_DIR: /var/lib/stella
       STELLA_FRONTEND_ORIGIN: ${STELLA_FRONTEND_ORIGIN:-http://localhost:5173}
       STELLA_DEV_BYPASS: "false"
-      STELLA_USERNAME: ${STELLA_USERNAME:-stella}
-      STELLA_PASSWORD: ${STELLA_PASSWORD:-stella}
-      STELLA_JWT_SECRET: ${STELLA_JWT_SECRET:-replace-me}
+      STELLA_ENABLE_SAMPLE_BOOTSTRAP: "false"
+      STELLA_REQUIRE_EXPLICIT_AUTH: "true"
+      STELLA_USERNAME: ${STELLA_USERNAME}
+      STELLA_PASSWORD: ${STELLA_PASSWORD}
+      STELLA_JWT_SECRET: ${STELLA_JWT_SECRET}
       STELLA_LLM_CONFIG: /app/llm_config.docker.yaml
     ports:
       - "8000:8000"
@@ -41,4 +43,6 @@ services:
 
 volumes:
   ollama:
+    name: stella-ollama
   stella-runtime:
+    name: stella-runtime

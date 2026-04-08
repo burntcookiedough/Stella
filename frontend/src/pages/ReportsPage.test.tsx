@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -18,7 +18,16 @@ function renderPage() {
   const queryClient = new QueryClient();
   return render(
     <QueryClientProvider client={queryClient}>
-      <ReportsPage />
+      <ReportsPage
+        runtime={{
+          status: "ready",
+          has_data: true,
+          llm_provider: "stub",
+          llm_model: "test-model",
+          llm_reachable: true,
+          llm_error: null,
+        }}
+      />
     </QueryClientProvider>,
   );
 }
@@ -30,7 +39,14 @@ describe("ReportsPage", () => {
     fetchOverview.mockResolvedValue({
       available_users: ["fitbit-user"],
       selected_user: "fitbit-user",
-      latest: null,
+      latest: {
+        day: "2026-04-07",
+        steps: 9000,
+        sleep_minutes: 420,
+        resting_hr: 58,
+        hrv: 42,
+        health_score: 84,
+      },
       trend_slices: [],
       anomalies: [],
     });
@@ -56,7 +72,9 @@ describe("ReportsPage", () => {
 
     renderPage();
 
-    fireEvent.click(await screen.findByRole("button", { name: /download report/i }));
+    const button = await screen.findByRole("button", { name: /download report/i });
+    await waitFor(() => expect(button.hasAttribute("disabled")).toBe(false));
+    fireEvent.click(button);
 
     expect(
       await screen.findByText(/metrics-only report downloaded because the llm summary was unavailable/i),
@@ -68,8 +86,30 @@ describe("ReportsPage", () => {
 
     renderPage();
 
-    fireEvent.click(await screen.findByRole("button", { name: /download report/i }));
+    const button = await screen.findByRole("button", { name: /download report/i });
+    await waitFor(() => expect(button.hasAttribute("disabled")).toBe(false));
+    fireEvent.click(button);
 
     expect(await screen.findByText(/report request failed/i)).toBeTruthy();
+  });
+
+  it("explains that metrics-only PDFs are still expected", async () => {
+    const queryClient = new QueryClient();
+    render(
+      <QueryClientProvider client={queryClient}>
+        <ReportsPage
+          runtime={{
+            status: "ready",
+            has_data: true,
+            llm_provider: "ollama",
+            llm_model: "mistral",
+            llm_reachable: false,
+            llm_error: "provider unavailable",
+          }}
+        />
+      </QueryClientProvider>,
+    );
+
+    expect(await screen.findByText(/metrics-only reports are expected right now/i)).toBeTruthy();
   });
 });

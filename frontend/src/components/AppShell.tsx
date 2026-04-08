@@ -21,6 +21,18 @@ export function AppShell({
   runtimeError: Error | null;
 }) {
   const location = useLocation();
+  const backendLabel = runtimeError ? "backend offline" : runtime ? "backend ready" : "checking backend";
+  const dataLabel = runtime?.has_data ? "data loaded" : "waiting for import";
+  const aiLabel = runtimeError ? "runtime blocked" : runtime?.llm_reachable ? "llm ready" : "metrics-only mode";
+  const runtimeMessage = runtimeError
+    ? "The backend readiness check failed. Restart Stella from the supported launcher to restore the workspace."
+    : !runtime
+      ? "Checking workspace readiness..."
+      : !runtime.has_data
+        ? "No health data has been imported yet. Use the import panel to load an export bundle before analytics, reports, or chat become useful."
+        : runtime.llm_reachable
+          ? `Ollama is reachable with ${runtime.llm_model}.`
+          : `Chat is intentionally unavailable while ${runtime.llm_provider} is down. Reports stay usable in metrics-only mode: ${runtime.llm_error}`;
 
   return (
     <div className="shell">
@@ -73,25 +85,21 @@ export function AppShell({
             <p className="eyebrow">Workspace</p>
             <h2>Selected KPIs, streaming insight, and trend depth.</h2>
             <p className="workspace-copy">
-              Review the active dataset, ask focused questions, and export a clean handoff without
-              leaving the core workspace.
+              Import a health export, review the active dataset, and generate a clean local handoff
+              without leaving the core workspace.
             </p>
-            <div className="runtime-row">
-              <p className={`status-pill ${runtimeError ? "error" : runtime?.llm_reachable ? "ready" : "warning"}`}>
-                {runtimeError ? "backend offline" : runtime?.llm_reachable ? "llm ready" : "metrics-only mode"}
-              </p>
-              <p className="status">
-                {runtimeError
-                  ? "The backend readiness check failed. Restart Stella to restore the workspace."
-                  : runtime?.llm_reachable
-                    ? `Ollama is reachable with ${runtime.llm_model}.`
-                    : runtime
-                      ? `Chat and report summaries are degraded until ${runtime.llm_provider} recovers: ${runtime.llm_error}`
-                      : "Checking workspace readiness..."}
-              </p>
+            <div className="runtime-banner">
+              <div className="runtime-pill-row">
+                <p className={`status-pill ${runtimeError ? "error" : "ready"}`}>{backendLabel}</p>
+                <p className={`status-pill ${runtime?.has_data ? "ready" : "warning"}`}>{dataLabel}</p>
+                <p className={`status-pill ${runtimeError ? "error" : runtime?.llm_reachable ? "ready" : "warning"}`}>
+                  {aiLabel}
+                </p>
+              </div>
+              <p className="status">{runtimeMessage}</p>
             </div>
           </div>
-          <ImportPanel />
+          <ImportPanel hasData={Boolean(runtime?.has_data)} />
         </header>
         <motion.section
           className="workspace-body"

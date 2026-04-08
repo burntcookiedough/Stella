@@ -32,6 +32,7 @@ def configure_environment() -> None:
     os.environ["STELLA_DUCKDB_PATH"] = str(TEMP_DATA_DIR / "stella.duckdb")
     os.environ["STELLA_LLM_CONFIG"] = str(ROOT / "tests" / "fixtures" / "llm_stub.yaml")
     os.environ["STELLA_SAMPLE_DATA_DIR"] = str(RAW_DIR)
+    os.environ["STELLA_ENABLE_SAMPLE_BOOTSTRAP"] = "false"
     os.environ["STELLA_DEV_BYPASS"] = "false"
     os.environ["STELLA_FRONTEND_ORIGIN"] = "http://127.0.0.1:4173"
 

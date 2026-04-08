@@ -48,10 +48,10 @@ export default function App() {
           path="/"
           element={<AppShell onLogout={() => setTokenState(null)} runtime={runtime.data} runtimeError={runtime.error} />}
         >
-          <Route index element={<OverviewPage />} />
-          <Route path="chat" element={<ChatPage />} />
+          <Route index element={<OverviewPage runtime={runtime.data} />} />
+          <Route path="chat" element={<ChatPage runtime={runtime.data} runtimeError={runtime.error} />} />
           <Route path="analytics" element={<AnalyticsPage />} />
-          <Route path="reports" element={<ReportsPage />} />
+          <Route path="reports" element={<ReportsPage runtime={runtime.data} runtimeError={runtime.error} />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
@@ -82,28 +82,35 @@ function LoginScreen({
         <p className="eyebrow">Secure local access</p>
         <h1>Sign in to Stella</h1>
         <p className="muted-copy">
-          Single-user JWT auth keeps the API safe on a home network while preserving the local-first
-          model.
+          Stella runs as a single-user local workspace. Use the credentials configured for your local
+          runtime, then import a health export before analytics and chat become useful.
         </p>
         <div className={`runtime-card ${runtimeTone}`}>
           <p className="control-label">Runtime status</p>
           {runtimeError ? (
             <p className="status error">
-              Backend unavailable. Start Stella with <code>run_stella.bat</code> or <code>run_stella_docker.bat</code>.
+              Backend unavailable. Start Stella with <code>run_stella_docker.bat</code> for the supported install path or{" "}
+              <code>run_stella.bat</code> for local development.
             </p>
           ) : runtime ? (
             <>
               <p className="status">
-                Backend ready. LLM provider: {runtime.llm_provider} / {runtime.llm_model}
+                Backend ready. Runtime health is being reported through <code>/readyz</code>.
               </p>
               {!runtime.has_data ? (
-                <p className="muted-copy">No imported data yet. Sign in, then use Import to load a source bundle.</p>
+                <p className="muted-copy">
+                  Stella is installed correctly, but no health data has been imported yet. Sign in, then load a Fitbit,
+                  Apple Health, Google Takeout, Oura, Garmin, or manual CSV export.
+                </p>
               ) : null}
               {!runtime.llm_reachable ? (
                 <p className="status warning">
-                  Stella will stay usable in metrics-only mode until the model runtime recovers: {runtime.llm_error}
+                  AI features are in supported metrics-only mode. Reports still work, and chat will unlock again once{" "}
+                  {runtime.llm_provider} becomes reachable: {runtime.llm_error}
                 </p>
-              ) : null}
+              ) : (
+                <p className="muted-copy">LLM runtime ready with {runtime.llm_provider} / {runtime.llm_model}.</p>
+              )}
             </>
           ) : (
             <p className="status">Checking local services...</p>
@@ -116,8 +123,8 @@ function LoginScreen({
             void onLogin(new FormData(event.currentTarget));
           }}
         >
-          <input name="username" placeholder="Username" defaultValue="stella" />
-          <input name="password" type="password" placeholder="Password" defaultValue="stella" />
+          <input name="username" placeholder="Username" autoComplete="username" />
+          <input name="password" type="password" placeholder="Password" autoComplete="current-password" />
           <button type="submit">Enter workspace</button>
         </form>
         {error ? <p className="status error">{error}</p> : null}
