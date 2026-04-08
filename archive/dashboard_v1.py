@@ -3,7 +3,6 @@ import streamlit as st
 import requests
 import pandas as pd
 import plotly.graph_objects as go
-import time
 
 # --- Configuration ---
 API_URL = "http://127.0.0.1:8000"
@@ -95,31 +94,37 @@ st.markdown("""
 # --- Helper Functions ---
 def get_users():
     try:
-        resp = requests.get(f"{API_URL}/users")
+        resp = requests.get(f"{API_URL}/users", timeout=10)
         if resp.status_code == 200:
             return resp.json().get("users", [])
         return []
-    except:
+    except requests.RequestException:
         return []
+
 
 def analyze_user(user_id):
     try:
-        resp = requests.post(f"{API_URL}/analyze/{user_id}")
+        resp = requests.post(f"{API_URL}/analyze/{user_id}", timeout=10)
         if resp.status_code == 200:
             return resp.json()
         return None
-    except:
+    except requests.RequestException:
         return None
+
 
 # --- Main Layout ---
 
 def chat_with_stella(user_id, message):
     try:
-        resp = requests.post(f"{API_URL}/chat", json={"user_id": user_id, "message": message})
+        resp = requests.post(
+            f"{API_URL}/chat",
+            json={"user_id": user_id, "message": message},
+            timeout=30,
+        )
         if resp.status_code == 200:
             return resp.json().get("response", "I couldn't process that.")
         return "Backend error."
-    except:
+    except requests.RequestException:
         return "Connection failed."
 
 # --- Main Layout ---
@@ -279,7 +284,7 @@ if selected_user:
                 if st.button("Generate PDF Report"):
                     with st.spinner("Generating full health report (this may take a moment)..."):
                         try:
-                            pdf_resp = requests.get(f"{API_URL}/report/{selected_user}")
+                            pdf_resp = requests.get(f"{API_URL}/report/{selected_user}", timeout=30)
                             if pdf_resp.status_code == 200:
                                 st.download_button(
                                     label="Download Report",
