@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
 
 import { buildChatSocket } from "../api/client";
@@ -6,6 +6,17 @@ import { buildChatSocket } from "../api/client";
 type Message = {
   role: "user" | "assistant";
   content: string;
+};
+
+type ConnectionState = "connecting" | "ready" | "streaming" | "disconnected" | "error" | "interrupted";
+
+const CONNECTION_COPY: Record<ConnectionState, string> = {
+  connecting: "Connecting to Stella...",
+  ready: "Connected. Ask Stella about the current data set.",
+  streaming: "Stella is streaming a response.",
+  disconnected: "Chat disconnected. Reconnect to continue.",
+  error: "Chat error. Reconnect to continue.",
+  interrupted: "Stella restarted while the session was open. Reconnect to continue.",
 };
 
 export function ChatPage() {
@@ -17,16 +28,35 @@ export function ChatPage() {
   ]);
   const [draft, setDraft] = useState("");
   const [streaming, setStreaming] = useState(false);
+  const [connectionState, setConnectionState] = useState<ConnectionState>("connecting");
+  const [statusMessage, setStatusMessage] = useState(CONNECTION_COPY.connecting);
+  const [socketVersion, setSocketVersion] = useState(0);
   const socketRef = useRef<WebSocket | null>(null);
+  const awaitingReplyRef = useRef(false);
+  const terminalReasonRef = useRef<"none" | "error">("none");
 
   useEffect(() => {
+    terminalReasonRef.current = "none";
+    awaitingReplyRef.current = false;
+    setStreaming(false);
+    setConnectionState("connecting");
+    setStatusMessage(CONNECTION_COPY.connecting);
+
     const socket = buildChatSocket();
     socketRef.current = socket;
+
+    socket.addEventListener("open", () => {
+      setConnectionState("ready");
+      setStatusMessage(CONNECTION_COPY.ready);
+    });
 
     socket.addEventListener("message", (event) => {
       const payload = JSON.parse(event.data) as { type: string; content?: string; message?: string };
       if (payload.type === "chunk") {
+        awaitingReplyRef.current = true;
         setStreaming(true);
+        setConnectionState("streaming");
+        setStatusMessage(CONNECTION_COPY.streaming);
         setMessages((current) => {
           const last = current[current.length - 1];
           if (last?.role === "assistant") {
@@ -39,36 +69,81 @@ export function ChatPage() {
         });
       }
       if (payload.type === "done") {
+        awaitingReplyRef.current = false;
         setStreaming(false);
+        setConnectionState("ready");
+        setStatusMessage(CONNECTION_COPY.ready);
       }
       if (payload.type === "error") {
+        terminalReasonRef.current = "error";
+        awaitingReplyRef.current = false;
         setStreaming(false);
-        setMessages((current) => [...current, { role: "assistant", content: payload.message ?? "Streaming error." }]);
+        setConnectionState("error");
+        setStatusMessage(payload.message ?? CONNECTION_COPY.error);
+        setMessages((current) => {
+          const last = current[current.length - 1];
+          if (last?.role === "assistant" && !last.content.trim()) {
+            return [
+              ...current.slice(0, -1),
+              { role: "assistant", content: payload.message ?? "Streaming error." },
+            ];
+          }
+          return [...current, { role: "assistant", content: payload.message ?? "Streaming error." }];
+        });
       }
     });
 
-    return () => socket.close();
-  }, []);
+    socket.addEventListener("error", () => {
+      terminalReasonRef.current = "error";
+      setStreaming(false);
+      setConnectionState("error");
+      setStatusMessage("The chat connection hit a network error.");
+    });
 
-  const lastRole = useMemo(() => messages[messages.length - 1]?.role, [messages]);
+    socket.addEventListener("close", (event) => {
+      socketRef.current = null;
+      setStreaming(false);
+
+      if (terminalReasonRef.current === "error") {
+        awaitingReplyRef.current = false;
+        return;
+      }
+
+      if (event.code === 1012) {
+        awaitingReplyRef.current = false;
+        setConnectionState("interrupted");
+        setStatusMessage(CONNECTION_COPY.interrupted);
+        return;
+      }
+
+      if (awaitingReplyRef.current) {
+        awaitingReplyRef.current = false;
+        setConnectionState("error");
+        setStatusMessage("The connection closed before Stella finished responding.");
+        setMessages((current) => [...current, { role: "assistant", content: "The session closed before the answer completed." }]);
+        return;
+      }
+
+      setConnectionState("disconnected");
+      setStatusMessage(CONNECTION_COPY.disconnected);
+    });
+
+    return () => {
+      socketRef.current = null;
+      socket.close();
+    };
+  }, [socketVersion]);
 
   function handleSubmit(event: FormEvent<HTMLFormElement>): void {
     event.preventDefault();
     const trimmed = draft.trim();
-    if (!trimmed || !socketRef.current) {
+    if (!trimmed || !socketRef.current || connectionState !== "ready") {
       return;
     }
 
-    setMessages((current) => {
-      const assistantPlaceholder: Message[] =
-        lastRole === "assistant" ? [] : [{ role: "assistant", content: "" }];
-      const nextMessages: Message[] = [
-        ...current,
-        { role: "user", content: trimmed },
-        ...assistantPlaceholder,
-      ];
-      return nextMessages;
-    });
+    awaitingReplyRef.current = true;
+    terminalReasonRef.current = "none";
+    setMessages((current) => [...current, { role: "user", content: trimmed }, { role: "assistant", content: "" }]);
     setDraft("");
     socketRef.current.send(JSON.stringify({ message: trimmed }));
   }
@@ -79,6 +154,15 @@ export function ChatPage() {
         <div className="panel-heading">
           <p className="eyebrow">Streaming chat</p>
           <h3>Ask Stella about the current data set</h3>
+        </div>
+        <div className="status-row">
+          <p className={`status-pill ${connectionState}`}>{connectionState}</p>
+          <p className="status">{statusMessage}</p>
+          {connectionState === "disconnected" || connectionState === "error" || connectionState === "interrupted" ? (
+            <button type="button" className="inline-button" onClick={() => setSocketVersion((current) => current + 1)}>
+              Reconnect chat
+            </button>
+          ) : null}
         </div>
         <div className="transcript-list">
           {messages.map((message, index) => (
@@ -107,7 +191,7 @@ export function ChatPage() {
           onChange={(event) => setDraft(event.target.value)}
           placeholder="Why was my sleep score weak this week?"
         />
-        <button type="submit" disabled={!draft.trim() || streaming}>
+        <button type="submit" disabled={!draft.trim() || streaming || connectionState !== "ready"}>
           {streaming ? "Streaming..." : "Send question"}
         </button>
       </form>

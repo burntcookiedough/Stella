@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import asyncio
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated, Any
+import logging
 import shutil
 import uuid
 
@@ -11,6 +13,7 @@ from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, Respon
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
+from starlette.websockets import WebSocketDisconnect, WebSocketState
 import uvicorn
 
 from analytics.anomaly import generate_llm_summary
@@ -20,13 +23,14 @@ from analytics.store import HealthStore
 from backend.auth import decode_token, issue_token, secure_compare
 from backend.config import Settings, get_settings
 from backend.report import create_health_report
-from llm.engine import LLMGateway
+from llm.engine import LLMGateway, LLMGatewayError
 
 try:
     from apscheduler.schedulers.background import BackgroundScheduler
 except ImportError:  # pragma: no cover
     BackgroundScheduler = None
 
+logger = logging.getLogger(__name__)
 settings = get_settings()
 security = HTTPBearer(auto_error=False)
 
@@ -128,6 +132,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["Content-Disposition", "X-Stella-LLM-Status", "X-Stella-LLM-Error"],
 )
 
 
@@ -147,7 +152,15 @@ def healthz() -> dict[str, str]:
 @app.get("/readyz")
 def readyz(request: Request) -> dict[str, Any]:
     store: HealthStore = request.app.state.store
-    return {"status": "ready", "has_data": store.has_events()}
+    llm_health = _get_gateway(request).health_check()
+    return {
+        "status": "ready",
+        "has_data": store.has_events(),
+        "llm_provider": llm_health.provider,
+        "llm_model": llm_health.model,
+        "llm_reachable": llm_health.reachable,
+        "llm_error": llm_health.error,
+    }
 
 
 @app.post("/v1/auth/login", response_model=LoginResponse)
@@ -230,12 +243,25 @@ def generate_report(
         ),
         "correlations": correlations_payload["pairs"][:3],
     }
-    ai_text = _get_gateway(request).analyze_health_data(llm_summary)
+    llm_status = "ok"
+    llm_error = ""
+    try:
+        ai_text = _get_gateway(request).analyze_health_data(llm_summary)
+    except LLMGatewayError as exc:
+        llm_status = "fallback"
+        llm_error = str(exc)
+        ai_text = _fallback_report_summary(exc)
     pdf_bytes = create_health_report(overview_payload, correlations_payload, ai_text)
+    headers = {
+        "Content-Disposition": f"attachment; filename=stella-report-{overview_payload['selected_user']}.pdf",
+        "X-Stella-LLM-Status": llm_status,
+    }
+    if llm_error:
+        headers["X-Stella-LLM-Error"] = llm_error
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",
-        headers={"Content-Disposition": f"attachment; filename=stella-report-{overview_payload['selected_user']}.pdf"},
+        headers=headers,
     )
 
 
@@ -249,17 +275,22 @@ async def chat_socket(websocket: WebSocket) -> None:
     try:
         if not (runtime_settings.dev_bypass and _client_is_loopback(client_host)):
             if not token:
-                await websocket.send_json({"type": "error", "message": "Missing token."})
-                await websocket.close(code=4401)
+                await _safe_send_json(websocket, {"type": "error", "message": "Missing token."})
+                await _safe_close(websocket, code=4401)
                 return
             decode_token(token, runtime_settings.jwt_secret)
 
         while True:
-            payload = await websocket.receive_json()
-            source_user_id = payload.get("source_user_id")
+            try:
+                payload = await websocket.receive_json()
+            except WebSocketDisconnect as exc:
+                logger.info("Chat client disconnected before sending a message (code=%s).", exc.code)
+                return
+
+            source_user_id = payload.get("source_user_id") or websocket.query_params.get("source_user_id")
             message = str(payload.get("message", "")).strip()
             if not message:
-                await websocket.send_json({"type": "error", "message": "Message is required."})
+                await _safe_send_json(websocket, {"type": "error", "message": "Message is required."})
                 continue
 
             overview_payload = websocket.app.state.analytics_service.get_overview(source_user_id)
@@ -282,13 +313,62 @@ async def chat_socket(websocket: WebSocket) -> None:
                 },
             ]
 
-            for chunk in websocket.app.state.llm_gateway.stream_chat(messages):
-                await websocket.send_json({"type": "chunk", "content": chunk})
-            await websocket.send_json({"type": "done"})
-    except Exception as exc:
-        if websocket.application_state.value == 1:
-            await websocket.send_json({"type": "error", "message": str(exc)})
-            await websocket.close(code=1011)
+            try:
+                for chunk in websocket.app.state.llm_gateway.stream_chat(messages):
+                    if not await _safe_send_json(websocket, {"type": "chunk", "content": chunk}):
+                        logger.info("Chat stream ended after the client disconnected.")
+                        return
+                if not await _safe_send_json(websocket, {"type": "done"}):
+                    logger.info("Chat session closed before completion signal could be delivered.")
+                    return
+            except LLMGatewayError as exc:
+                await _safe_send_json(websocket, {"type": "error", "message": str(exc)})
+                await _safe_close(websocket, code=1011)
+                return
+            except WebSocketDisconnect as exc:
+                logger.info("Chat client disconnected during streaming (code=%s).", exc.code)
+                return
+            except asyncio.CancelledError:
+                logger.info("Chat session interrupted by server shutdown or reload.")
+                await _safe_close(websocket, code=1012)
+                raise
+    except WebSocketDisconnect as exc:
+        logger.info("Chat client disconnected (code=%s).", exc.code)
+    except asyncio.CancelledError:
+        logger.info("Chat session cancelled during shutdown.")
+        await _safe_close(websocket, code=1012)
+        raise
+    except Exception:
+        logger.exception("Unexpected chat websocket failure.")
+        if await _safe_send_json(websocket, {"type": "error", "message": "Chat session failed unexpectedly."}):
+            await _safe_close(websocket, code=1011)
+
+
+def _fallback_report_summary(exc: LLMGatewayError) -> str:
+    return (
+        "LLM summary unavailable; metrics-only report generated.\n"
+        f"Provider status: {exc}\n"
+        "Use the deterministic metrics and correlations above while the model runtime recovers."
+    )
+
+
+async def _safe_send_json(websocket: WebSocket, payload: dict[str, Any]) -> bool:
+    if websocket.application_state != WebSocketState.CONNECTED:
+        return False
+    try:
+        await websocket.send_json(payload)
+        return True
+    except (RuntimeError, WebSocketDisconnect):
+        return False
+
+
+async def _safe_close(websocket: WebSocket, code: int) -> None:
+    if websocket.application_state != WebSocketState.CONNECTED:
+        return
+    try:
+        await websocket.close(code=code)
+    except RuntimeError:
+        return
 
 
 if __name__ == "__main__":

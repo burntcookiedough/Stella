@@ -1,80 +1,88 @@
+from __future__ import annotations
 
 import subprocess
-import time
-import requests
 import sys
-import threading
+import time
+import json
+from urllib import request
 
-def run_server():
-    """Starts Uvicorn server"""
-    subprocess.run([sys.executable, "-m", "uvicorn", "backend.main:app", "--host", "127.0.0.1", "--port", "8000"], 
-                   stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
-def main():
-    print("🚀 Starting Backend Verification...")
-    
-    # Start server in robust thread/process
+BASE_URL = "http://127.0.0.1:8000"
+
+
+def _request_json(url: str, method: str = "GET", payload: dict | None = None, headers: dict[str, str] | None = None, timeout: int = 15):
+    data = json.dumps(payload).encode("utf-8") if payload is not None else None
+    request_headers = {"Accept": "application/json", **(headers or {})}
+    if payload is not None:
+        request_headers["Content-Type"] = "application/json"
+    req = request.Request(url, data=data, headers=request_headers, method=method)
+    with request.urlopen(req, timeout=timeout) as response:
+        body = response.read()
+        return response.status, dict(response.headers), json.loads(body.decode("utf-8"))
+
+
+def _request_binary(url: str, payload: dict | None = None, headers: dict[str, str] | None = None, timeout: int = 90):
+    data = json.dumps(payload).encode("utf-8") if payload is not None else None
+    request_headers = {"Accept": "*/*", **(headers or {})}
+    if payload is not None:
+        request_headers["Content-Type"] = "application/json"
+    req = request.Request(url, data=data, headers=request_headers, method="POST")
+    with request.urlopen(req, timeout=timeout) as response:
+        return response.status, dict(response.headers), response.read()
+
+
+def _login() -> str:
+    _, _, body = _request_json(
+        f"{BASE_URL}/v1/auth/login",
+        method="POST",
+        payload={"username": "stella", "password": "stella"},
+    )
+    return body["access_token"]
+
+
+def main() -> None:
+    print("Starting Stella backend smoke test...")
     server_process = subprocess.Popen(
         [sys.executable, "-m", "uvicorn", "backend.main:app", "--host", "127.0.0.1", "--port", "8000"],
-        text=True
+        text=True,
     )
-    
-    print("⏳ Waiting for server to start (5s)...")
-    time.sleep(5) 
 
-    base_url = "http://127.0.0.1:8000"
-    
     try:
-        # 1. Test Health Check
-        print("\n🔹 Testing Root Endpoint (GET /)...")
-        resp = requests.get(f"{base_url}/")
-        print(f"Status: {resp.status_code}")
-        print(f"Response: {resp.json()}")
-        if resp.status_code != 200:
-            raise Exception("Root endpoint failed")
+        print("Waiting for backend startup...")
+        time.sleep(5)
 
-        # 2. Get Users
-        print("\n🔹 Fetching Available Users (GET /users)...")
-        resp = requests.get(f"{base_url}/users")
-        users = resp.json().get("users", [])
-        print(f"Found {len(users)} users. Sample: {users[:3]}")
-        
-        if not users:
-            raise Exception("No users found")
-            
-        test_user_id = users[0]
+        _, _, healthz = _request_json(f"{BASE_URL}/healthz", timeout=10)
+        _, _, readyz = _request_json(f"{BASE_URL}/readyz", timeout=10)
+        print("healthz:", healthz)
+        print("readyz:", readyz)
 
-        # 3. Test Full Analysis
-        print(f"\n🔹 Testing Analysis Pipeline for User {test_user_id} (POST /analyze)...")
-        print("Note: This calls Ollama, so it might take 5-10 seconds.")
-        
-        start_time = time.time()
-        resp = requests.post(f"{base_url}/analyze/{test_user_id}")
-        elapsed = time.time() - start_time
-        
-        print(f"⏱️ Time taken: {elapsed:.2f}s")
-        print(f"Status: {resp.status_code}")
-        
-        if resp.status_code == 200:
-            data = resp.json()
-            print("\n✅ API Response Success!")
-            print(f"User: {data['user_id']}")
-            print(f"Health Score: {data['metrics']['health_score']}")
-            print(f"AI Insight Preview: {data['ai_analysis'][:100]}...")
-        else:
-            print(f"❌ Analysis Failed: {resp.text}")
+        token = _login()
+        headers = {"Authorization": f"Bearer {token}"}
 
-    except Exception as e:
-        print(f"\n❌ Verification Error: {e}")
-        # Print server logs if failed
-        outs, errs = server_process.communicate(timeout=1)
-        print("Server Stdout:", outs)
-        print("Server Stderr:", errs)
+        _, _, overview = _request_json(f"{BASE_URL}/v1/overview", headers=headers, timeout=15)
+        _, _, correlations = _request_json(f"{BASE_URL}/v1/analytics/correlations", headers=headers, timeout=15)
+        report_status, report_headers, report_content = _request_binary(
+            f"{BASE_URL}/v1/reports/pdf",
+            payload={"source_user_id": None},
+            headers=headers,
+            timeout=90,
+        )
 
+        print("overview latest:", overview.get("latest"))
+        print("correlation pairs:", len(correlations.get("pairs", [])))
+        print("report status:", report_status, report_headers.get("X-Stella-LLM-Status"))
+
+        if report_status != 200:
+            raise RuntimeError("Backend smoke test failed.")
+        if not report_content.startswith(b"%PDF"):
+            raise RuntimeError("Report endpoint did not return a PDF.")
+
+        print("Backend smoke test passed.")
     finally:
-        print("\n🛑 Stopping Server...")
+        print("Stopping backend...")
         server_process.terminate()
         server_process.wait()
+
 
 if __name__ == "__main__":
     main()

@@ -30,19 +30,28 @@ export function ImportPanel() {
 
   return (
     <section className="import-panel">
-      <div>
+      <div className="import-copy">
         <p className="eyebrow">Import</p>
         <h3>Bring in exported health data</h3>
+        <p className="muted-copy">
+          Select the source format first, then attach the raw files you want Stella to ingest.
+        </p>
       </div>
       <div className="import-controls">
-        <select value={source} onChange={(event) => setSource(event.target.value)}>
-          {SOURCE_OPTIONS.map((option) => (
-            <option key={option.value} value={option.value}>
-              {option.label}
-            </option>
-          ))}
-        </select>
+        <label className="control-stack">
+          <span className="control-label">Source bundle</span>
+          <div className="select-shell">
+            <select value={source} onChange={(event) => setSource(event.target.value)}>
+              {SOURCE_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        </label>
         <label className="file-input">
+          <span className="control-label">Files</span>
           <span>{files.length ? `${files.length} file(s)` : "Choose files"}</span>
           <input
             type="file"
