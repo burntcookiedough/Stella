@@ -273,6 +273,13 @@ textarea:focus-visible,
   max-width: 48ch;
 }
 
+.runtime-row {
+  display: grid;
+  gap: 0.55rem;
+  margin-top: 0.35rem;
+  max-width: 60ch;
+}
+
 .workspace-body,
 .page-grid,
 .chat-layout {
@@ -355,6 +362,50 @@ textarea:focus-visible,
   min-height: 300px;
 }
 
+.matrix-grid {
+  display: grid;
+  gap: 0.45rem;
+  align-items: stretch;
+}
+
+.matrix-corner,
+.matrix-axis,
+.matrix-cell,
+.runtime-card {
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 1rem;
+}
+
+.matrix-corner,
+.matrix-axis {
+  display: grid;
+  place-items: center;
+  min-height: 4rem;
+  padding: 0.7rem;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--muted-strong);
+  font-size: 0.82rem;
+  text-align: center;
+}
+
+.matrix-axis-row,
+.matrix-corner {
+  justify-content: start;
+  text-align: left;
+  padding-inline: 0.95rem;
+}
+
+.matrix-cell {
+  display: grid;
+  place-items: center;
+  min-height: 4rem;
+  padding: 0.6rem;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 0.82rem;
+  letter-spacing: -0.02em;
+}
+
 .list-block {
   display: grid;
   gap: 0.25rem;
@@ -385,6 +436,11 @@ textarea:focus-visible,
 .status-pill.ready {
   border-color: rgba(123, 219, 192, 0.3);
   color: var(--accent);
+}
+
+.status-pill.warning {
+  border-color: rgba(214, 179, 123, 0.32);
+  color: var(--accent-warm);
 }
 
 .status-pill.streaming {
@@ -577,6 +633,22 @@ textarea:focus-visible,
   display: grid;
   gap: 0.75rem;
   margin-top: 1rem;
+}
+
+.runtime-card {
+  display: grid;
+  gap: 0.45rem;
+  margin-top: 1rem;
+  padding: 1rem 1.05rem;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.runtime-card.warning {
+  border-color: rgba(214, 179, 123, 0.25);
+}
+
+.runtime-card.error {
+  border-color: rgba(255, 138, 138, 0.3);
 }
 
 .status.error {

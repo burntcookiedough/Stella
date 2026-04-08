@@ -1,7 +1,7 @@
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { motion } from "framer-motion";
 
-import { clearToken } from "../api/client";
+import { clearToken, type ReadyStateResponse } from "../api/client";
 import { ImportPanel } from "./ImportPanel";
 
 const NAV_ITEMS = [
@@ -13,8 +13,12 @@ const NAV_ITEMS = [
 
 export function AppShell({
   onLogout,
+  runtime,
+  runtimeError,
 }: {
   onLogout: () => void;
+  runtime?: ReadyStateResponse;
+  runtimeError: Error | null;
 }) {
   const location = useLocation();
 
@@ -72,6 +76,20 @@ export function AppShell({
               Review the active dataset, ask focused questions, and export a clean handoff without
               leaving the core workspace.
             </p>
+            <div className="runtime-row">
+              <p className={`status-pill ${runtimeError ? "error" : runtime?.llm_reachable ? "ready" : "warning"}`}>
+                {runtimeError ? "backend offline" : runtime?.llm_reachable ? "llm ready" : "metrics-only mode"}
+              </p>
+              <p className="status">
+                {runtimeError
+                  ? "The backend readiness check failed. Restart Stella to restore the workspace."
+                  : runtime?.llm_reachable
+                    ? `Ollama is reachable with ${runtime.llm_model}.`
+                    : runtime
+                      ? `Chat and report summaries are degraded until ${runtime.llm_provider} recovers: ${runtime.llm_error}`
+                      : "Checking workspace readiness..."}
+              </p>
+            </div>
           </div>
           <ImportPanel />
         </header>

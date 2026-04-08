@@ -9,6 +9,7 @@ COPY analytics ./analytics
 COPY backend ./backend
 COPY llm ./llm
 COPY llm_config.yaml .
+COPY llm_config.docker.yaml .
 COPY data ./data
 
 EXPOSE 8000

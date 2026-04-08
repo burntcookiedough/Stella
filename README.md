@@ -23,6 +23,12 @@ Double-click `run_stella.bat` from the repo root. It will:
 
 If you want to launch without checking Ollama first, set `STELLA_SKIP_OLLAMA=1` before running the script.
 
+### Docker startup
+
+Double-click `run_stella_docker.bat` for the Docker-first path. It will build the containers, wait for backend/frontend readiness, and open Stella in your browser.
+
+If you want the bundled Ollama sidecar too, set `STELLA_DOCKER_WITH_OLLAMA=1` before running the script.
+
 ### Backend
 
 ```bash
@@ -53,6 +59,18 @@ Use the optional Ollama sidecar with:
 ```bash
 docker compose --profile local-llm up --build
 ```
+
+Use `.env.example` as the starting point for Docker credentials and JWT configuration.
+
+## Runtime data
+
+By default Stella now keeps user runtime state out of the repository:
+
+- Windows: `%LOCALAPPDATA%\Stella`
+- macOS: `~/Library/Application Support/Stella`
+- Linux: `${XDG_DATA_HOME:-~/.local/share}/stella`
+
+That runtime directory holds the generated DuckDB database, uploads, and the copied local `llm_config.yaml`. Override it with `STELLA_BASE_DIR` when needed.
 
 ## Tests
 

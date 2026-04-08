@@ -20,6 +20,7 @@ def _app(tmp_path: Path):
     os.environ["STELLA_UPLOADS_DIR"] = str(tmp_path / "data" / "uploads")
     os.environ["STELLA_DUCKDB_PATH"] = str(tmp_path / "data" / "stella.duckdb")
     os.environ["STELLA_LLM_CONFIG"] = str(tmp_path / "llm_config.yaml")
+    os.environ["STELLA_SAMPLE_DATA_DIR"] = str(tmp_path / "data" / "raw")
     os.environ["STELLA_DEV_BYPASS"] = "true"
     (tmp_path / "llm_config.yaml").write_text(
         "provider: ollama\nmodel: mistral\nbase_url: http://localhost:11434\n",

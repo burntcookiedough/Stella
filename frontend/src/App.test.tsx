@@ -3,10 +3,6 @@ import { render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("react-plotly.js", () => ({
-  default: () => null,
-}));
-
 import App from "./App";
 
 function renderWithProviders(initialEntries: string[] = ["/"]) {
@@ -27,6 +23,19 @@ describe("App", () => {
       "fetch",
       vi.fn(async (input: RequestInfo | URL) => {
         const url = String(input);
+        if (url.includes("/readyz")) {
+          return new Response(
+            JSON.stringify({
+              status: "ready",
+              has_data: true,
+              llm_provider: "stub",
+              llm_model: "test-model",
+              llm_reachable: true,
+              llm_error: null,
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          );
+        }
         if (url.includes("/v1/overview")) {
           return new Response(
             JSON.stringify({

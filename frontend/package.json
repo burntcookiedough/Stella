@@ -14,10 +14,8 @@
   "dependencies": {
     "@tanstack/react-query": "^5.59.20",
     "framer-motion": "^12.6.2",
-    "plotly.js-dist-min": "^3.0.1",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "react-plotly.js": "^2.6.0",
     "react-router-dom": "^7.5.0",
     "recharts": "^2.15.3"
   },

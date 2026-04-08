@@ -46,6 +46,15 @@ export type ReportDownload = {
   llmError: string | null;
 };
 
+export type ReadyStateResponse = {
+  status: string;
+  has_data: boolean;
+  llm_provider: string;
+  llm_model: string;
+  llm_reachable: boolean;
+  llm_error: string | null;
+};
+
 export function getToken(): string | null {
   return window.localStorage.getItem(TOKEN_KEY);
 }
@@ -100,6 +109,10 @@ export async function login(payload: LoginPayload): Promise<void> {
     body: JSON.stringify(payload),
   });
   setToken(response.access_token);
+}
+
+export function fetchReadyState(): Promise<ReadyStateResponse> {
+  return apiFetch<ReadyStateResponse>("/readyz");
 }
 
 export function fetchOverview(sourceUserId?: string): Promise<OverviewResponse> {

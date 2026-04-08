@@ -1,0 +1,7 @@
+provider: ollama
+model: mistral
+base_url: http://ollama:11434
+api_key_env:
+temperature: 0.2
+max_tokens: 512
+timeout_sec: 60
