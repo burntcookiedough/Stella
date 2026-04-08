@@ -20,6 +20,8 @@ export function AppShell({
 
   return (
     <div className="shell">
+      <div className="shell-glow shell-glow-left" />
+      <div className="shell-glow shell-glow-right" />
       <aside className="sidebar">
         <div className="brand-block">
           <p className="eyebrow">Stella v2</p>
@@ -63,9 +65,13 @@ export function AppShell({
 
       <main className="workspace">
         <header className="workspace-header">
-          <div>
+          <div className="workspace-intro">
             <p className="eyebrow">Workspace</p>
             <h2>Selected KPIs, streaming insight, and trend depth.</h2>
+            <p className="workspace-copy">
+              Review the active dataset, ask focused questions, and export a clean handoff without
+              leaving the core workspace.
+            </p>
           </div>
           <ImportPanel />
         </header>

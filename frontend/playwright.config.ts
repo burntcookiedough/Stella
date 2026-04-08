@@ -4,6 +4,7 @@ import { defineConfig } from "@playwright/test";
 
 const frontendRoot = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(frontendRoot, "..");
+const useEdgeChannel = !process.env.CI && process.platform === "win32";
 
 export default defineConfig({
   testDir: "./e2e",
@@ -14,7 +15,7 @@ export default defineConfig({
   use: {
     baseURL: "http://127.0.0.1:4173",
     browserName: "chromium",
-    channel: "msedge",
+    channel: useEdgeChannel ? "msedge" : undefined,
     trace: "on-first-retry",
   },
   webServer: [
