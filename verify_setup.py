@@ -1,6 +1,4 @@
 import sys
-import os
-import subprocess
 
 print(f"Python Executable: {sys.executable}")
 print(f"Python Version: {sys.version}")
