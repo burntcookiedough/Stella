@@ -1,14 +1,29 @@
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { expect, test } from "@playwright/test";
 
-test("critical path works across overview, analytics, chat, and reports", async ({ page }) => {
+const frontendDir = path.dirname(fileURLToPath(import.meta.url));
+const repoRoot = path.resolve(frontendDir, "..", "..");
+const fitbitActivity = path.join(repoRoot, "tests", "fixtures", "imports", "fitbit_dailyActivity_merged.csv");
+const fitbitSleep = path.join(repoRoot, "tests", "fixtures", "imports", "fitbit_sleepDay_merged.csv");
+
+test("first run import unlocks overview, analytics, chat, and reports", async ({ page }) => {
   await page.goto("/");
+
+  await expect(page.getByText(/no health data has been imported yet/i)).toBeVisible();
 
   await page.getByPlaceholder("Username").fill("stella");
   await page.getByPlaceholder("Password").fill("stella");
   await page.getByRole("button", { name: /enter workspace/i }).click();
 
-  await expect(page.getByRole("heading", { name: /selected kpis, streaming insight, and trend depth/i })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /stella is ready for your first import/i })).toBeVisible();
+  await expect(page.getByText(/run the first import/i)).toBeVisible();
+
+  await page.locator(".file-input input").setInputFiles([fitbitActivity, fitbitSleep]);
+  await page.getByRole("button", { name: /run first import/i }).click();
+
   await expect(page.getByText(/health score/i)).toBeVisible();
+  await expect(page.getByText(/llm ready/i)).toBeVisible();
 
   await page.getByRole("link", { name: /deep analytics/i }).click();
   await expect(page.getByRole("heading", { name: /metric relationships/i })).toBeVisible();

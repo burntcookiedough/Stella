@@ -1,107 +1,133 @@
-# Stella v2
+# Stella
 
-Stella v2 is a privacy-first health intelligence platform that keeps health data local while exposing a modern ingestion, analytics, and chat workflow.
+Stella is a single-user local-first health analytics app.
 
-## What changed
+Supported product surface:
 
-- Unified file imports for Apple Health XML, Google Takeout JSON, Fitbit CSV bundles, Oura JSON, Garmin FIT, and manual CSV.
-- DuckDB-backed normalized event storage plus daily overview and correlation materializations.
-- Provider-swappable LLM gateway configured through `llm_config.yaml`.
-- FastAPI v2 routes with JWT auth, import endpoint, overview analytics, report generation, and WebSocket chat.
-- React + Vite frontend replacing the archived Streamlit dashboard at `archive/dashboard_v1.py`.
+- FastAPI backend
+- React + Vite frontend
+- DuckDB local storage
+- Ollama-backed LLM integration with supported metrics-only fallback
+- `run_stella_docker.bat` as the canonical install path
+- `run_stella.bat` as the supported local development path
 
-## Local run
+Legacy code is isolated under `archive/` and `tools/legacy/`. It is not part of the active product runtime.
 
-### One-click startup
+## Supported startup paths
 
-Double-click `run_stella.bat` from the repo root. It will:
+### Docker-first install path
 
-- verify Python and frontend dependencies
-- start the FastAPI backend on `http://127.0.0.1:8000`
-- start the Vite frontend on `http://127.0.0.1:5173`
-- open the app in your browser once both services are reachable
+Double-click `run_stella_docker.bat`.
 
-If you want to launch without checking Ollama first, set `STELLA_SKIP_OLLAMA=1` before running the script.
+What it does:
 
-### Docker startup
+- verifies Docker Desktop and `docker compose`
+- creates `.env` from `.env.example` when needed
+- generates a strong Docker password and JWT secret on first run
+- starts the packaged Stella stack on `http://127.0.0.1:5173`
+- opens the app in your browser after the packaged frontend and backend are ready
 
-Double-click `run_stella_docker.bat` for the Docker-first path. It will build the containers, wait for backend/frontend readiness, and open Stella in your browser.
+Notes:
 
-If you want the bundled Ollama sidecar too, set `STELLA_DOCKER_WITH_OLLAMA=1` before running the script.
+- Docker Desktop is the supported non-technical-user install path
+- runtime data is stored only in the `stella-runtime` named Docker volume
+- Ollama is optional
+- set `STELLA_DOCKER_WITH_OLLAMA=1` before launch if you want the real `local-llm` profile
 
-### Backend
+### Local development path
+
+Double-click `run_stella.bat`.
+
+What it does:
+
+- verifies Python and frontend dependencies
+- starts the FastAPI backend on `http://127.0.0.1:8000`
+- starts the Vite frontend on `http://127.0.0.1:5173`
+- opens the app in your browser once both services are reachable
+
+Local dev keeps convenience auth defaults. Docker mode does not.
+
+## Docker configuration
+
+Use `.env.example` as the template for Docker runtime configuration.
+
+Required Docker runtime values:
+
+- `STELLA_USERNAME`
+- `STELLA_PASSWORD`
+- `STELLA_JWT_SECRET`
+- `STELLA_FRONTEND_ORIGIN`
+
+For the supported Docker product path:
+
+- the launcher generates `.env` automatically on first run
+- Docker auth values must be explicit and strong
+- the frontend talks to the backend through same-origin `/api/*` and `/ws`
+
+Manual compose commands:
 
 ```bash
-pip install -r requirements.txt
-uvicorn backend.main:app --reload
+docker compose up -d --build
+docker compose down
 ```
 
-The backend bootstraps the sample Fitbit files in `data/raw/` if the DuckDB store is empty.
-
-### Frontend
+Optional real Ollama sidecar:
 
 ```bash
-cd frontend
-npm install
-npm run dev
+docker compose --profile local-llm up -d --build
 ```
-
-The default frontend origin is `http://127.0.0.1:5173`. Default credentials are `stella / stella` unless overridden with env vars.
-
-## Docker
-
-```bash
-docker compose up --build
-```
-
-Use the optional Ollama sidecar with:
-
-```bash
-docker compose --profile local-llm up --build
-```
-
-Use `.env.example` as the starting point for Docker credentials and JWT configuration.
 
 ## Runtime data
 
-By default Stella now keeps user runtime state out of the repository:
+By default Stella keeps runtime state out of the repository.
 
 - Windows: `%LOCALAPPDATA%\Stella`
 - macOS: `~/Library/Application Support/Stella`
 - Linux: `${XDG_DATA_HOME:-~/.local/share}/stella`
 
-That runtime directory holds the generated DuckDB database, uploads, and the copied local `llm_config.yaml`. Override it with `STELLA_BASE_DIR` when needed.
+That runtime directory holds the generated DuckDB database, uploads, and copied local `llm_config.yaml`.
 
-## Tests
+Docker uses the named volume `stella-runtime` instead of OS app-data directories.
 
-```bash
-pytest
-cd frontend && npm run test
-cd frontend && npm run test:e2e
-```
+## First run
 
-## CI
+Stella starts empty by default.
 
-GitHub Actions now validates the same surface as local development:
+- no sample data is auto-imported in supported product paths
+- login and overview explain that the app is installed correctly but waiting for a real data import
+- import a Fitbit, Apple Health, Google Takeout, Oura, Garmin, or manual CSV export to unlock analytics, reports, and chat
+- if Ollama is unavailable, Stella remains usable in metrics-only mode
+
+## Tests and smoke
+
+Primary CI gates:
 
 - `ruff check .`
 - `pytest`
-- `npm ci`
-- `npm run test`
-- `npm run build`
-- `npm run test:e2e`
-- backend and frontend Docker image builds
+- `cd frontend && npm run test`
+- `cd frontend && npm run build`
+- `cd frontend && npm run test:e2e`
+- backend Docker build
+- frontend Docker build
+- `python tools/smoke/docker_smoke.py --mode all`
 
-## Product direction
+The Docker smoke entrypoint validates:
 
-The near-term path to a standalone Stella product is:
+- packaged frontend reachability
+- backend readiness
+- login through the same-origin `/api` path
+- first-run empty runtime state
+- import flow
+- overview and report success
+- degraded chat failure when no LLM is available
+- successful chat/report behavior in stubbed smoke LLM mode
 
-1. Stabilize local-first runtime: imports, analytics, chat, report generation, launcher, and health checks.
-2. Lock CI to the real critical path: lint, backend tests, frontend tests, browser E2E, and container builds.
-3. Package the app for non-technical users: Docker-first distribution, then a desktop wrapper or installer once the runtime is stable enough.
-4. Harden product boundaries: account setup, persistent user data directories, backups, structured error reporting, and upgrade-safe configuration.
-5. Add release discipline: tagged builds, changelog, smoke tests, and signed distributables.
+## Release discipline
 
-## Architecture
+Use the release checklist in [docs/release-checklist.md](docs/release-checklist.md).
 
-The updated architecture diagram lives at `stella_v2_architecture.svg`.
+Versioning policy:
+
+- first Docker-first milestone: `v0.1.0`
+- patch for bug-fix-only releases
+- minor for user-visible product polish and workflow improvements

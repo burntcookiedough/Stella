@@ -14,13 +14,15 @@ from llm.engine import LLMGatewayError, LLMHealth
 FIXTURES = Path(__file__).parent / "fixtures" / "imports"
 
 
-def _app(tmp_path: Path):
+def _app(tmp_path: Path, *, sample_bootstrap_enabled: bool = False):
     os.environ["STELLA_BASE_DIR"] = str(tmp_path)
     os.environ["STELLA_DATA_DIR"] = str(tmp_path / "data")
     os.environ["STELLA_UPLOADS_DIR"] = str(tmp_path / "data" / "uploads")
     os.environ["STELLA_DUCKDB_PATH"] = str(tmp_path / "data" / "stella.duckdb")
     os.environ["STELLA_LLM_CONFIG"] = str(tmp_path / "llm_config.yaml")
     os.environ["STELLA_SAMPLE_DATA_DIR"] = str(tmp_path / "data" / "raw")
+    os.environ["STELLA_ENABLE_SAMPLE_BOOTSTRAP"] = "true" if sample_bootstrap_enabled else "false"
+    os.environ["STELLA_REQUIRE_EXPLICIT_AUTH"] = "false"
     os.environ["STELLA_DEV_BYPASS"] = "true"
     (tmp_path / "llm_config.yaml").write_text(
         "provider: ollama\nmodel: mistral\nbase_url: http://localhost:11434\n",
@@ -173,6 +175,44 @@ def test_readyz_includes_llm_diagnostics(tmp_path: Path) -> None:
             "llm_reachable": False,
             "llm_error": "provider unavailable",
         }
+
+        await client.aclose()
+        await module.shutdown_event()
+
+    asyncio.run(run())
+
+
+def test_supported_runtime_starts_empty_even_when_sample_files_exist(tmp_path: Path) -> None:
+    module = _app(tmp_path)
+    sample_dir = tmp_path / "data" / "raw"
+    sample_dir.mkdir(parents=True, exist_ok=True)
+    (sample_dir / "dailyActivity_merged.csv").write_bytes((FIXTURES / "fitbit_dailyActivity_merged.csv").read_bytes())
+    (sample_dir / "sleepDay_merged.csv").write_bytes((FIXTURES / "fitbit_sleepDay_merged.csv").read_bytes())
+
+    async def run() -> None:
+        client = await _async_client(module)
+        response = await client.get("/readyz")
+        assert response.status_code == 200
+        assert response.json()["has_data"] is False
+
+        await client.aclose()
+        await module.shutdown_event()
+
+    asyncio.run(run())
+
+
+def test_sample_bootstrap_can_be_enabled_for_test_harnesses(tmp_path: Path) -> None:
+    module = _app(tmp_path, sample_bootstrap_enabled=True)
+    sample_dir = tmp_path / "data" / "raw"
+    sample_dir.mkdir(parents=True, exist_ok=True)
+    (sample_dir / "dailyActivity_merged.csv").write_bytes((FIXTURES / "fitbit_dailyActivity_merged.csv").read_bytes())
+    (sample_dir / "sleepDay_merged.csv").write_bytes((FIXTURES / "fitbit_sleepDay_merged.csv").read_bytes())
+
+    async def run() -> None:
+        client = await _async_client(module)
+        response = await client.get("/readyz")
+        assert response.status_code == 200
+        assert response.json()["has_data"] is True
 
         await client.aclose()
         await module.shutdown_event()

@@ -76,6 +76,8 @@ describe("App", () => {
   it("renders the login screen when no token is present", () => {
     renderWithProviders();
     expect(screen.getByRole("heading", { name: /sign in to stella/i })).toBeTruthy();
+    expect((screen.getByPlaceholderText(/username/i) as HTMLInputElement).value).toBe("");
+    expect((screen.getByPlaceholderText(/password/i) as HTMLInputElement).value).toBe("");
   });
 
   it("renders the analytics route when authenticated", async () => {

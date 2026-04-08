@@ -12,7 +12,7 @@ const SOURCE_OPTIONS = [
   { value: "manual", label: "Manual CSV" },
 ];
 
-export function ImportPanel() {
+export function ImportPanel({ hasData }: { hasData: boolean }) {
   const [source, setSource] = useState("fitbit");
   const [files, setFiles] = useState<File[]>([]);
   const queryClient = useQueryClient();
@@ -22,6 +22,7 @@ export function ImportPanel() {
     onSuccess: async () => {
       setFiles([]);
       await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["readyz"] }),
         queryClient.invalidateQueries({ queryKey: ["overview"] }),
         queryClient.invalidateQueries({ queryKey: ["correlations"] }),
       ]);
@@ -32,9 +33,11 @@ export function ImportPanel() {
     <section className="import-panel">
       <div className="import-copy">
         <p className="eyebrow">Import</p>
-        <h3>Bring in exported health data</h3>
+        <h3>{hasData ? "Bring in another export" : "Start with your first health export"}</h3>
         <p className="muted-copy">
-          Select the source format first, then attach the raw files you want Stella to ingest.
+          {hasData
+            ? "Select the source format first, then attach the raw files you want Stella to ingest."
+            : "Stella starts empty on purpose. Select a source format, attach the raw export files, and unlock analytics, reports, and chat."}
         </p>
       </div>
       <div className="import-controls">
@@ -64,11 +67,11 @@ export function ImportPanel() {
           disabled={!files.length || mutation.isPending}
           onClick={() => mutation.mutate()}
         >
-          {mutation.isPending ? "Importing..." : "Run import"}
+          {mutation.isPending ? "Importing..." : hasData ? "Run import" : "Run first import"}
         </button>
       </div>
       {mutation.error ? <p className="status error">{String(mutation.error)}</p> : null}
-      {mutation.isSuccess ? <p className="status">Latest import completed.</p> : null}
+      {mutation.isSuccess ? <p className="status">{hasData ? "Latest import completed." : "First import completed."}</p> : null}
     </section>
   );
 }

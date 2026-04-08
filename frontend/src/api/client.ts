@@ -1,5 +1,9 @@
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:8000";
-const WS_BASE_URL = import.meta.env.VITE_WS_BASE_URL ?? "ws://127.0.0.1:8000";
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? (import.meta.env.DEV ? "http://127.0.0.1:8000" : "/api");
+const WS_BASE_URL =
+  import.meta.env.VITE_WS_BASE_URL ??
+  (import.meta.env.DEV
+    ? "ws://127.0.0.1:8000/v1/chat/ws"
+    : `${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.host}/ws`);
 const TOKEN_KEY = "stella-token";
 
 export type LoginPayload = {
@@ -163,5 +167,6 @@ export function buildChatSocket(sourceUserId?: string): WebSocket {
   if (sourceUserId) {
     params.set("source_user_id", sourceUserId);
   }
-  return new WebSocket(`${WS_BASE_URL}/v1/chat/ws?${params.toString()}`);
+  const url = params.size ? `${WS_BASE_URL}?${params.toString()}` : WS_BASE_URL;
+  return new WebSocket(url);
 }

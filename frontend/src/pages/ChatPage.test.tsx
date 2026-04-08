@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 type Listener = (event?: Event | { data?: string; code?: number }) => void;
@@ -56,11 +56,23 @@ import { ChatPage } from "./ChatPage";
 
 describe("ChatPage", () => {
   beforeEach(() => {
+    cleanup();
     sockets.length = 0;
   });
 
   it("surfaces server interruption and offers reconnect", async () => {
-    render(<ChatPage />);
+    render(
+      <ChatPage
+        runtime={{
+          status: "ready",
+          has_data: true,
+          llm_provider: "stub",
+          llm_model: "test-model",
+          llm_reachable: true,
+          llm_error: null,
+        }}
+      />,
+    );
 
     expect(screen.getByText(/connecting to stella/i)).toBeTruthy();
 
@@ -82,5 +94,23 @@ describe("ChatPage", () => {
 
     expect(await screen.findByText(/stella restarted while the session was open/i)).toBeTruthy();
     expect(screen.getByRole("button", { name: /reconnect chat/i })).toBeTruthy();
+  });
+
+  it("explains metrics-only mode when chat is unavailable", async () => {
+    render(
+      <ChatPage
+        runtime={{
+          status: "ready",
+          has_data: true,
+          llm_provider: "ollama",
+          llm_model: "mistral",
+          llm_reachable: false,
+          llm_error: "provider unavailable",
+        }}
+      />,
+    );
+
+    expect((await screen.findAllByText(/chat is unavailable in metrics-only mode/i)).length).toBeGreaterThan(0);
+    expect(screen.getByRole("button", { name: /send question/i }).hasAttribute("disabled")).toBe(true);
   });
 });
